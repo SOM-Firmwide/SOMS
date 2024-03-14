@@ -2,7 +2,7 @@
 
 
 class Frame:
-    def __init__(self, start, end, name=None):
+    def __init__(self, start, end, section=None, name=None):
         self.name = name
         
         self._start = None
@@ -10,6 +10,7 @@ class Frame:
 
         self.start = start
         self.end = end
+        self.section = section
 
     @property
     def start(self):

@@ -1,28 +1,15 @@
-"""Code Checks"""
-
-__author__ = """SOM"""
-__email__ = 'ricardo.avelino@som.com'
-__version__ = '0.1.0'
+"""Connectors"""
 
 
-from .AISC import (
-    SecondOrder,
-    Compression,
-    FlexureMajor,
-    FlexureMinor,
-    CompressionDCR,
-    FlexureMajorDCR,
-    FlexureMinorDCR,
-    InteractionDCR,
+from .etabs import (
+    ETABS
+)
+
+from .sap import (
+    SAP
 )
 
 __all__ = [
-    'SecondOrder',
-    'Compression',
-    'FlexureMajor',
-    'FlexureMinor',
-    'CompressionDCR',
-    'FlexureMajorDCR',
-    'FlexureMinorDCR',
-    'InteractionDCR',
+    'ETABS',
+    'SAP',
 ]

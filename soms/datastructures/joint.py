@@ -46,7 +46,7 @@ class Joint(Point):
     def z(self):
         return self._z
     
-    @y.setter
+    @z.setter
     def z(self, z):
         self._z = float(z)
 

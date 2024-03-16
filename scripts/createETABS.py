@@ -15,4 +15,4 @@ for i in joints:
     print(i, joints[i])
 
 for i in areas:
-    print(i, areas[i])
+    print(i, areas[i], len(areas[i]))

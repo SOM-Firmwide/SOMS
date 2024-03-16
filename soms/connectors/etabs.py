@@ -178,12 +178,12 @@ class ETABS:
         key = 0
         for i in range(NumberNames):
             if i == 0:
-                a, b = 0, PointDelimiter[0]
+                a, b = 0, PointDelimiter[0] + 1
             else:
-                a, b = PointDelimiter[i-1], PointDelimiter[i]
+                a, b = PointDelimiter[i-1] + 1, PointDelimiter[i] + 1
             pts = []
             for j in range(len(PointNames[a:b])):
-                pt = Joint(PointX[a:b][j], PointX[a:b][j], PointX[a:b][j], name=PointNames[a:b][j])
+                pt = Joint(PointX[a:b][j], PointY[a:b][j], PointZ[a:b][j], name=PointNames[a:b][j])
                 pts.append(pt)
             areai = Area(points=pts, name=MyName[i])
             dict[key] = areai

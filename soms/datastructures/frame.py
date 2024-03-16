@@ -1,7 +1,8 @@
 """Frame Class"""
 
+from compas.geometry import Line
 
-class Frame:
+class Frame(Line):
     def __init__(self, start, end, section=None, name=None):
         self.name = name
         
@@ -19,7 +20,6 @@ class Frame:
     @start.setter
     def start(self, start):
         self._start = start
-
 
     @property
     def end(self):

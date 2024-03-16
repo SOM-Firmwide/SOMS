@@ -13,8 +13,17 @@ from .joint import(
     Joint
 )
 
+from .area import(
+    Area
+)
+
+from .structure import(
+    Structure
+)
 
 __all__ = [
     'Frame',
-    'Joint'
+    'Joint',
+    'Area',
+    'Structure'
 ]

@@ -282,28 +282,29 @@ def F8_flexure_round_hss(D: Array1D,
                          Z: Array1D,
                          Fy: Array1D,
                          E: float = 29000) -> Array1D:
-    """
+    r"""
     Flexural capacity of round HSS members following AISC section F8.
 
     Parameters
     ----------
     D : Array1D
-        DESCRIPTION.
+        Outside diameter of round HSS, (in. or mm)
     t : Array1D
-        DESCRIPTION.
+        Design wall thickness of memmber (see Spec. Commentary Section B4.2).
+        (in. or mm)
     S : Array1D
-        DESCRIPTION.
+        Elastic section modulus, :math:`in^3 (mm^3)`.
     Z : Array1D
-        DESCRIPTION.
+        Plastic section modulus, :math:`in^3 (mm^3)`.
     Fy : Union[Array1D, float]
-        DESCRIPTION.
+        Specified minimum yield strength (ksi or MPa).
     E : float, optional
-        DESCRIPTION. The default is 29000.
+        Modulus of elasticity of steel. 29000 ksi (200,000 MPa)
 
     Returns
     -------
     Array1D
-        DESCRIPTION.
+        Section moment capacity, :math:`\phi M_n`, (kip-in, N-mm).
 
     """
 

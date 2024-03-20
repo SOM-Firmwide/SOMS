@@ -1,262 +1,383 @@
 import numpy as np
+from typing import Union
 
-def SecondOrder(shapes : dict, forces : dict, Lb : float, E : float):
-    """AISC Appendix 8 Approximate Second-Order Analysis
-
-    Parameters
-    ----------
-    shapes : dict
-        Dictionary with information about the cross section
-    forces : dict
-        Dictionary with the forces applied at the member
-    Lb : float
-        Member ubraced length
-    E : float
-        Young modulus
-
-    Returns
-    -------
-    B1x, B1y : (np.array, np.array)
-        Second order parameters
-    """
+Array1D = Union[np.ndarray, float]
 
 
-    tb = 1
-    Cm = 1
-    alpha = 1
-    Ix = shapes['Ix']
-    Iy = shapes['Iy']
-
-    Pu = abs(forces['P'].values.squeeze())
-    Pu = np.reshape(Pu,(len(Ix),-1))
-
-    # AISC Appendix 8
-    Pe1x = np.pi**2 * 0.8 * tb * E * Ix / (Lb*12)**2
-    Pe1y = np.pi**2 * 0.8 * tb * E * Iy / (Lb*12)**2
-    B1x = Cm / (1 - alpha * Pu.T / Pe1x.values)
-    B1y = Cm / (1 - alpha * Pu.T / Pe1y.values)
-
-    return B1x, B1y
-
-
-def Compression(shapes : dict, Lb : float, E : float, Fy : float):
-    """AISC Chapter E Design of Members for Compression (E3)
+def P_delta(Pr: Array1D,
+            I: Array1D,
+            Lb: Array1D,
+            E: float = 29000,
+            tao_b: float = 1.0,
+            Cm: Array1D = 1.0,
+            alpha: float = 1.0) -> Array1D:
+    r"""
+    Calculate the B1 multiplier for :math:`P-\delta` effects using AISC
+    Appendix 8 (Approximate Second-Order Analysis), with respect to the
+    provided axis.
 
     Parameters
     ----------
-    shapes : dict
-        Dictionary with information about the cross section
-    forces : dict
-        Dictionary with the forces applied at the member
-    Lb : float
-        Member ubraced length
-    Fy : float
-        Yield Strength
+    Pr : Array1D
+        Required axial strength .
+    I : Array1D
+        Moment of intertia about the chosen axis (in^4 or mm^4).
+    Lb : Array1D
+        Member unbraced length (in. or mm).
+    E : float, optional
+        Modulus of elasticity of steel. 29000 ksi (200,000 MPa)
+    tao_b : float, optional
+        Stiffness reduction parameter, see Chapter C. The default is 1.0.
+    Cm : Array1D, optional
+        Coefficient accounting for nonuniform moment. The default is 1.0.
+    alpha : float, optional
+        alpha = 1.0 (LRFD), or 1.6 (ASD). The default is 1.0.
 
     Returns
     -------
-    PhiPn
-        Compression capacity
+    Array1D
+        Multiplier for :math:`P-\delta` effects B1.
+
     """
 
-    rx = shapes['rx']
-    ry = shapes['ry']
-    A = shapes['A']
+    # TODO: tao_b is assumed to be 1, implement Chapter C3
+    # Do all forces have the same sign? (we don't want to handle edge cases)
+    assert np.all(Pr > 0) if Pr[0] > 0 else np.all(Pr < 0), \
+        "Not all forces have the same sign, are some columns in tension?"
+    Pr = np.abs(Pr)
 
-    # AISC E3
-    r = np.stack((rx, ry)).min(axis=0)
-    Fe = np.pi**2 * E / (Lb * 12 / r)**2
-    Fcr = np.where(Fy / Fe <= 2.25, (0.658**(Fy / Fe)) * Fy, 0.877 * Fe)
+    # Elastic critical buckling strength (AISC A-8-5)
+    Pe1 = np.pi**2 * 0.8 * tao_b * E * I / (Lb)**2
 
-    PhiPn = 0.9 * Fcr * A
-    PhiPn = PhiPn.values
-
-    return PhiPn
+    # AISC Appendix 8, (AISC A-8-3)
+    B1 = Cm / (1 - alpha * Pr/Pe1)
+    return B1
 
 
-def FlexureMajor(shapes : dict, Lb : float, E : float, Fy : float):
-    """AISC Chapter F Design of Members for Flexure (F2)
+def E3_compression(A: Array1D,
+                   rx: Array1D,
+                   ry: Array1D,
+                   Lb: Array1D,
+                   Fy: Array1D,
+                   E: float = 29000) -> Array1D:
+    r"""
+    AISC Chapter E Design of Members for Compression (E3)
 
     Parameters
     ----------
-    shapes : dict
-        Dictionary with information about the cross section
-    Lb : float
-        Member ubraced length
-    E : float
-        Young modulus
-    Fy : float
-        Yield Strength
+    A : Array1D
+        Member areas.
+    rx : Array1D
+        Radius of gyration wrt strong axis.
+    ry : Array1D
+        Radius of gyration wrt weak axis.
+    Lb : Union[Array1D, float]
+        Member unbraced length, in.
+    Fy : Union[Array1D, float]
+        Yield strength, ksi.
+    E : float, optional
+        Young's modulus, ksi. The default is 29000
 
     Returns
     -------
-    PhiMnx
-        Strong axis moment capacity
+    Array1D
+        Compression capacity, :math:`\phi P_n`, (kip).
+
     """
 
-    ho = shapes['ho']
-    Iy = shapes['Iy']
-    Cw = shapes['Cw']
-    J = shapes['J']
-    Sx = shapes['Sx']
-    Zx = shapes['Zx']
-    ry = shapes['ry']
-    rts = shapes['rts']
-    Cb = 1
+    # Elastic buckling stress (AISC E3-4)
+    r_min = np.minimum(rx, ry)
+    Fe = np.pi**2 * E / (Lb / r_min)**2
 
-    # AISC F2
-    c = np.where(shapes['Type'] == "W", 1, ho / 2 *np.sqrt(Iy/Cw))
+    # Critical stress, (AISC E3-2, E3-3)
+    Fcr = np.where(Fy / Fe <= 2.25,
+                   0.658**(Fy / Fe) * Fy,  # Inelastic
+                   0.877 * Fe)  # Elastic
 
-    # Yielding
+    phiPn = 0.9*Fcr*A
+    return phiPn
+
+
+def F2_flexure_major(section: Union[Array1D, None],
+                     ho: Union[Array1D, None],
+                     J: Union[Array1D, None],
+                     Sx: Union[Array1D, None],
+                     Zx: Union[Array1D, None],
+                     ry: Union[Array1D, None],
+                     rts: Union[Array1D, None],
+                     Fy: Array1D,
+                     Lb: Array1D,
+                     Iy: Union[Array1D, None],
+                     Cw: Union[Array1D, None],
+                     Cb: Array1D = 1.0,
+                     E: float = 29000,
+                     shapes: Union[dict, None] = None) -> Array1D:
+    r"""
+    AISC Chapter F Design of Members for Flexure (F2)
+
+    Parameters
+    ----------
+    ho : Union[Array1D, None]
+        Distance between flange centroids (in. or mm).
+    J : Union[Array1D, None]
+        Torsional constant (in^4 or mm^4).
+    Sx : Union[Array1D, None]
+        Elastic section modulus taken about the :math:`x`-axis,
+        :math:`in^3 (mm^3)`.
+    Zx : Union[Array1D, None]
+        Plastic section modulus taken about the :math:`x`-axis,
+        :math:`in^3 (mm^3)`.
+    ry : Union[Array1D, None]
+        Radius of gyration about the y-axis (in. or mm).
+    rts : Union[Array1D, None]
+        Effective radius of gyration (in. or mm).
+    Fy : Union[Array1D, float]
+        Specified minimum yield strength (ksi or MPa).
+    Lb : Union[Array1D, float]
+        Length between points that are either braced against lateral
+        displacement fo compression flange or braced against twist of the cross
+        section (in. or mm).
+    Iy : Union[Array1D, None]
+        Moment of intertia about the channel weak axis, for channels only
+        (in^4 or mm^4).
+    Cw : Union[Array1D, None]
+        Warping constant (in^6 or mm^6).
+    Cb : Union[Array1D, float], optional
+        Lateral-torsional buckling modification factor for non-uniform moment
+        diagrams. The default is 1.0.
+    E : float, optional
+        Modulus of elasticity of steel. 29000 ksi (200,000 MPa)
+    shapes : Union[dict, None], optional
+        Optionally pass in section properties in a dict or DataFrame.
+        The default is None.
+
+    Returns
+    -------
+    Array1D
+        Strong axis moment capacity, :math:`\phi M_{n_x}`, (kip-in, N-mm)
+
+    """
+
+    # TODO consider removing option to pass dict, currently for convenience
+    if shapes is not None:
+        section = shapes['Type']
+        ho = shapes['ho']
+        J = shapes['J']
+        Sx = shapes['Sx']
+        Zx = shapes['Zx']
+        ry = shapes['ry']
+        rts = shapes['rts']
+        # only used for channels, might throw error
+        Iy = shapes['Iy']
+        Cw = shapes['Cw']
+
+    # AISC F2-8
+    c = np.where(section == "W",  # TODO: infer section type from name?
+                 1,
+                 np.where(section == 'C',
+                          ho / 2 * np.sqrt(Iy/Cw),
+                          )
+                 )
+
+    # Plastic moment (AISC F2-1)
     Mp = Fy * Zx
 
-    #Lateral-Torsional Buckling
+    # Limiting laterally unbraced length for the limit state of yielding,
+    # (AISC F2-5)
     Lp = 1.76 * ry * np.sqrt(E / Fy)
-    Lr = 1.95 * rts * E / (0.7 * Fy) * np.sqrt(J * c / (Sx * ho) + np.sqrt((J * c / (Sx * ho))**2 + 6.76 * (0.7 * Fy / E)**2))
 
-    Mn = np.where(Lb * 12 <= Lp, Mp, np.where(Lb*12 > Lr,
-                                              np.stack((Cb * np.pi**2 * E / (Lb*12 / rts)**2 * np.sqrt(1 + 0.078 * (J * c) / (Sx * ho) * (Lb*12 / rts)**2)* Sx,  Mp)).min(axis=0),
-                                              np.stack((Cb*(Mp - (Mp - 0.7 * Fy * Sx)*(Lb * 12 - Lp)/(Lr - Lp)),  Mp)).min(axis=0)))
-    PhiMnx = 0.9 * Mn / 12 #kip-ft
+    # Limiting laterally unbraced length for the limit state of inelastic
+    # lateral-torsional buckling, (AISC F2-6)
+    Lr = 1.95 * rts * E / (0.7 * Fy) * np.sqrt(J * c / (Sx * ho) +
+                                               np.sqrt((J * c / (Sx * ho))**2 +
+                                                       6.76*(0.7 * Fy / E)**2)
+                                               )
 
-    return PhiMnx
+    # Elastic lateral-torsional buckling moment (AISC F2-3, F2-4)
+    Mn_elastic = Cb*np.pi**2*E / (Lb/rts)**2 *\
+        np.sqrt(1 + 0.078*(J*c)/(Sx*ho) * (Lb/rts)**2) * Sx
+
+    # Inelastic lateral-torsional buckling moment (AISC F2-2)
+    Mn_inelastic = Cb*(Mp - (Mp - 0.7*Fy*Sx) * (Lb - Lp)/(Lr - Lp))
+
+    # Nominal flexural strength
+    Mn = np.where(Lb <= Lp,
+                  Mp,
+                  np.where(Lb > Lr,
+                           np.minimum(Mp, Mn_elastic),
+                           np.minimum(Mp, Mn_inelastic)
+                           )
+                  )
+
+    phiMnx = 0.9 * Mn
+    return phiMnx
 
 
-def FlexureMinor(shapes : dict, E : float, Fy : float):
-    """AISC Chapter F Design of Members for Flexure (F6)
+def F6_flexure_minor(Sy: Array1D,
+                     Zy: Array1D,
+                     lambda_f: Array1D,
+                     Fy: Array1D,
+                     E: float = 29000) -> Array1D:
+    r"""
+    AISC Chapter F Design of Members for Flexure (F6)
 
     Parameters
     ----------
-    shapes : dict
-        Dictionary with information about the cross section
-    E : float
-        Young modulus
-    Fy : float
-        Yield Strength
+    Sy : Array1D
+        Elastic section modulus taken about the :math:`y`-axis,
+        :math:`in^3 (mm^3)`.
+    Zy : Array1D
+        Plastic section modulus taken about the :math:`y`-axis,
+        :math:`in^3 (mm^3)`.
+    lambda_f : Array1D
+        Slenderness parameter, equal to :math:`\frac{b_f}{2 t_f` for I-shapes,
+                                                          see AISC F6-4.
+    Fy : Array1D
+        Specified minimum yield strength (ksi or MPa).
+    E : float, optional
+        Modulus of elasticity of steel. 29000 ksi (200,000 MPa)
 
     Returns
     -------
-    PhiMny
-        Weak axis moment capacity
+    Array1D
+        Weak axis moment capacity, :math:`\phi M_{n_y}`, (kip-in, N-mm).
+
     """
 
-    b_div_t = shapes['bf/2tf']
-    Sy = shapes['Sy']
-    Zy = shapes['Zy']
+    # Width-to-thickness ratios: AISC TABLE B4.1b Case 10
+    # Limiting ratio for compact/noncompact section
+    lambda_pf = 0.38 * np.sqrt(E / Fy)
 
-    # Width-to-thickness ratios: AISC TABLE B4.1b
-    # Flanges of rolled I-shaped sections, channels, and tees
-    Lambda_p_f = 0.38 * np.sqrt(E / Fy)
-    Lambda_r_f = np.sqrt(E / Fy)
-    Lambda_f = b_div_t
+    # Limiting ratio for noncompact/slender section
+    lambda_rf = np.sqrt(E / Fy)
 
-    # AISC F6
-    #Yielding
-    Mp = np.stack((Fy * Zy, 1.6 * Fy *Sy)).min(axis=0)
+    # Plastic moment (AISC F6-1)
+    Mp = np.minimum(Fy*Zy, 1.6*Fy*Sy)
 
     # Flange Local Buckling
-    Mn = np.where(Lambda_f <= Lambda_p_f, Mp, np.where(Lambda_f >= Lambda_r_f, 0.69 * E / b_div_t**2 * Sy,
-                                                       Mp - (Mp - 0.7 * Fy * Sy) * (Lambda_f - Lambda_p_f) / (Lambda_r_f - Lambda_p_f)))
-    PhiMny = 0.9 * Mn / 12 #kip-ft
+    is_compact = lambda_f <= lambda_pf
+    is_slender = lambda_f >= lambda_rf
 
-    return  PhiMny
+    # Elastic flange local buckling moment (AISC F6-3, F6-4)
+    Mn_elastic = (0.69*E*Sy) / lambda_f**2
+
+    # Nominal flexural strength
+    # For non-compact flanges, interpolate between Mp and reduced moment
+    Mn = np.where(is_compact,
+                  Mp,
+                  np.where(is_slender,
+                           Mn_elastic,
+                           Mp - (Mp - 0.7 * Fy * Sy) *
+                           (lambda_f - lambda_pf) / (lambda_rf - lambda_pf)
+                           )
+                  )
+
+    phiMny = 0.9*Mn
+    return phiMny
 
 
-def CompressionDCR(forces : dict, PhiPn : np.array):
-    """AISC Compression DCR
+def F8_flexure_round_hss(D: Array1D,
+                         t: Array1D,
+                         S: Array1D,
+                         Z: Array1D,
+                         Fy: Array1D,
+                         E: float = 29000) -> Array1D:
+    """
+    Flexural capacity of round HSS members following AISC section F8.
 
     Parameters
     ----------
-    forces : dict
-        Forces applied at element
-    PhiPn : np.array
-        Element capacity
+    D : Array1D
+        DESCRIPTION.
+    t : Array1D
+        DESCRIPTION.
+    S : Array1D
+        DESCRIPTION.
+    Z : Array1D
+        DESCRIPTION.
+    Fy : Union[Array1D, float]
+        DESCRIPTION.
+    E : float, optional
+        DESCRIPTION. The default is 29000.
 
     Returns
     -------
-    DCR_P
-        Demand Capacity Ration in compression
+    Array1D
+        DESCRIPTION.
+
     """
 
-    Pu = abs(forces['P'].values.squeeze())
-    Pu = np.reshape(Pu,(len(PhiPn),-1))
+    assert np.all(D/t < 0.45*E/Fy), "F8 does not apply if D/t > 0.45 E/Fy"
 
-    DCR_P = Pu.T / PhiPn
+    # Yielding (AISC F8-1)
+    Mp = Fy*Z
 
-    return DCR_P
+    # Local buckling
+    lambda_p = 0.07 * E/Fy  # Limiting ratio for compact/noncompact section
+    lambda_r = 0.31 * E/Fy  # Limiting ratio for noncompact/slender section
+
+    is_slender = D/t >= lambda_r
+    is_compact = D/t < lambda_p
+
+    # Noncompact sections
+    Mn_noncompact = (0.021*E/(D/t) + Fy) * S
+
+    # Slender sections
+    Fcr = 0.33*E/(D/t)
+    Mn_slender = Fcr * S
+
+    Mn = np.where(is_compact,
+                  Mp,
+                  np.where(is_slender,
+                           np.minimum(Mp, Mn_slender),
+                           np.minimum(Mp, Mn_noncompact)
+                           )
+                  )
+    phiMn = 0.9*Mn
+    return phiMn
 
 
-def FlexureMajorDCR(forces : dict, PhiMnx : np.array, B1x : np.array):
-    """Flexure Major DCR using approximate second order analysis
+def H1_interaction(Pr: Array1D,
+                   Pc: Array1D,
+                   Mrx: Array1D,
+                   Mcx: Array1D,
+                   Mry: Array1D,
+                   Mcy: Array1D) -> Array1D:
+    """
+    AISC Chapter H Design of Members for Combined Forces and Torsion (H1)
 
     Parameters
     ----------
-    forces : dict
-        Forces applied at element
-    PhiMnx : np.array
-        Strong axis moment capacity
-    B1x : np.array
-        Second Order parameter
+    Pr : Array1D
+        Required axial strength (kips, N).
+    Pc : Array1D
+        Available axial strength, see Chapter E, (kips, N).
+    Mrx : Array1D
+        Required strong axis flexural strength (kip-in, N-mm).
+    Mcx : Array1D
+        Available strong axis flexural strength, see Chapter F, (kip-in, N-mm).
+    Mry : Array1D
+        Required weak axis flexural strength (kip-in, N-mm).
+    Mcy : Array1D
+        Available weak axis flexural strength, see Chapter F, (kip-in, N-mm).
 
     Returns
     -------
-    DCR_Mx
-        Demannd Capacity Ratio (strong axis)
+    Array1D
+        Interaction ratio.
+
     """
 
-    Mux = abs(forces['M3'].values.squeeze())
-    Mux = np.reshape(Mux,(len(PhiMnx),-1))
+    assert np.all(Pr > 0) if Pr[0] > 0 else np.all(Pr < 0), \
+        "Not all forces have the same sign, are some columns in tension?"
+    Pr = np.abs(Pr)
 
-    DCR_Mx = B1x * Mux.T / PhiMnx
+    M_total_int = np.abs(Mrx)/Mcx + np.abs(Mry)/Mcy
 
-    return DCR_Mx
+    # AISC H1
+    DCR = np.where(Pr/Pc >= 0.2,
+                   Pr/Pc + 8/9 * M_total_int,
+                   Pr/Pc/2 + M_total_int
+                   )
 
-
-def FlexureMinorDCR(forces : dict, PhiMny : np.array, B1y : np.array):
-    """Flexure Minor DCR using approximate second order analysis
-
-    Parameters
-    ----------
-    forces : dict
-        Forces applied at element
-    PhiMny : np.array
-        Weak axis moment capacity
-    B1y : np.array
-        Second Order parameter
-
-    Returns
-    -------
-    DCR_My
-        Demand Capacity Ratio of moment (weak axis)
-    """
-
-    Muy = abs(forces['M2'].values.squeeze())
-    Muy = np.reshape(Muy,(len(PhiMny),-1))
-
-    DCR_My = B1y * Muy.T / PhiMny
-
-    return  DCR_My
-
-
-def InteractionDCR(DCR_P : np.array, DCR_Mx : np.array, DCR_My : np.array):
-    """AISC Chapter H Design of Members for Combined Forces and Torsion (H1)
-
-    Parameters
-    ----------
-    DCR_P : np.array
-        DCR for axial load
-    DCR_Mx : np.array
-        DCR for moment at strong axis
-    DCR_My : np.array
-        DCR for moment at weak axis
-
-    Returns
-    -------
-    DCR_Int
-        Demand Capacity Ratio of interaction
-    """
-
-    #AISC H1
-    DCR_Int = np.where(DCR_P >= 0.2, DCR_P + 8 / 9 * (DCR_Mx + DCR_My), DCR_P / 2 + (DCR_Mx + DCR_My))
-
-    return DCR_Int
+    return DCR

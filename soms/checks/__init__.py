@@ -6,23 +6,19 @@ __version__ = '0.1.0'
 
 
 from .AISC import (
-    SecondOrder,
-    Compression,
-    FlexureMajor,
-    FlexureMinor,
-    CompressionDCR,
-    FlexureMajorDCR,
-    FlexureMinorDCR,
-    InteractionDCR,
+    P_delta,
+    E3_compression,
+    F2_flexure_major,
+    F6_flexure_minor,
+    F8_flexure_round_hss,
+    H1_interaction,
 )
 
 __all__ = [
-    'SecondOrder',
-    'Compression',
-    'FlexureMajor',
-    'FlexureMinor',
-    'CompressionDCR',
-    'FlexureMajorDCR',
-    'FlexureMinorDCR',
-    'InteractionDCR',
+    'P_delta',
+    'E3_compression',
+    'F2_flexure_major',
+    'F6_flexure_minor',
+    'F8_flexure_round_hss',
+    'H1_interaction',
 ]

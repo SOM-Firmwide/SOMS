@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Union
 
-Array1D = Union[np.ndarray, list]
+Array1D = Union[np.ndarray, float]
 
 
 def P_delta(Pr: Array1D,
@@ -9,9 +9,9 @@ def P_delta(Pr: Array1D,
             Lb: Array1D,
             E: float = 29000,
             tao_b: float = 1.0,
-            Cm: Union[Array1D, float] = 1.0,
+            Cm: Array1D = 1.0,
             alpha: float = 1.0) -> Array1D:
-    """
+    r"""
     Calculate the B1 multiplier for :math:`P-\delta` effects using AISC
     Appendix 8 (Approximate Second-Order Analysis), with respect to the
     provided axis.
@@ -57,10 +57,10 @@ def P_delta(Pr: Array1D,
 def E3_compression(A: Array1D,
                    rx: Array1D,
                    ry: Array1D,
-                   Lb: Union[Array1D, float],
-                   Fy: Union[Array1D, float],
+                   Lb: Array1D,
+                   Fy: Array1D,
                    E: float = 29000) -> Array1D:
-    """
+    r"""
     AISC Chapter E Design of Members for Compression (E3)
 
     Parameters
@@ -94,8 +94,8 @@ def E3_compression(A: Array1D,
                    0.658**(Fy / Fe) * Fy,  # Inelastic
                    0.877 * Fe)  # Elastic
 
-    PhiPn = 0.9*Fcr*A
-    return PhiPn
+    phiPn = 0.9*Fcr*A
+    return phiPn
 
 
 def F2_flexure_major(section: Union[Array1D, None],
@@ -105,14 +105,14 @@ def F2_flexure_major(section: Union[Array1D, None],
                      Zx: Union[Array1D, None],
                      ry: Union[Array1D, None],
                      rts: Union[Array1D, None],
-                     Fy: Union[Array1D, float],
-                     Lb: Union[Array1D, float],
+                     Fy: Array1D,
+                     Lb: Array1D,
                      Iy: Union[Array1D, None],
                      Cw: Union[Array1D, None],
-                     Cb: Union[Array1D, float] = 1.0,
+                     Cb: Array1D = 1.0,
                      E: float = 29000,
                      shapes: Union[dict, None] = None) -> Array1D:
-    """
+    r"""
     AISC Chapter F Design of Members for Flexure (F2)
 
     Parameters
@@ -209,9 +209,8 @@ def F2_flexure_major(section: Union[Array1D, None],
                            )
                   )
 
-    PhiMnx = 0.9 * Mn
-
-    return PhiMnx
+    phiMnx = 0.9 * Mn
+    return phiMnx
 
 
 def F6_flexure_minor(Sy: Array1D,
@@ -219,7 +218,7 @@ def F6_flexure_minor(Sy: Array1D,
                      lambda_f: Array1D,
                      Fy: Array1D,
                      E: float = 29000) -> Array1D:
-    """
+    r"""
     AISC Chapter F Design of Members for Flexure (F6)
 
     Parameters
@@ -245,18 +244,19 @@ def F6_flexure_minor(Sy: Array1D,
 
     """
 
-    # Width-to-thickness ratios: AISC TABLE B4.1b
-    # Flanges of rolled I-shaped sections, channels, and tees
-    lambda_p_f = 0.38 * np.sqrt(E / Fy)  # Limit for compact flange
-    lambda_r_f = np.sqrt(E / Fy)  # Limit for noncompact flange
+    # Width-to-thickness ratios: AISC TABLE B4.1b Case 10
+    # Limiting ratio for compact/noncompact section
+    lambda_pf = 0.38 * np.sqrt(E / Fy)
+
+    # Limiting ratio for noncompact/slender section
+    lambda_rf = np.sqrt(E / Fy)
 
     # Plastic moment (AISC F6-1)
     Mp = np.minimum(Fy*Zy, 1.6*Fy*Sy)
 
     # Flange Local Buckling
-    # TODO: verify these inequalities
-    is_compact = lambda_f <= lambda_p_f
-    is_slender = lambda_f >= lambda_r_f
+    is_compact = lambda_f <= lambda_pf
+    is_slender = lambda_f >= lambda_rf
 
     # Elastic flange local buckling moment (AISC F6-3, F6-4)
     Mn_elastic = (0.69*E*Sy) / lambda_f**2
@@ -268,12 +268,73 @@ def F6_flexure_minor(Sy: Array1D,
                   np.where(is_slender,
                            Mn_elastic,
                            Mp - (Mp - 0.7 * Fy * Sy) *
-                           (lambda_f - lambda_p_f) / (lambda_r_f - lambda_p_f)
+                           (lambda_f - lambda_pf) / (lambda_rf - lambda_pf)
                            )
                   )
 
-    PhiMny = 0.9*Mn
-    return PhiMny
+    phiMny = 0.9*Mn
+    return phiMny
+
+
+def F8_flexure_round_hss(D: Array1D,
+                         t: Array1D,
+                         S: Array1D,
+                         Z: Array1D,
+                         Fy: Array1D,
+                         E: float = 29000) -> Array1D:
+    """
+    Flexural capacity of round HSS members following AISC section F8.
+
+    Parameters
+    ----------
+    D : Array1D
+        DESCRIPTION.
+    t : Array1D
+        DESCRIPTION.
+    S : Array1D
+        DESCRIPTION.
+    Z : Array1D
+        DESCRIPTION.
+    Fy : Union[Array1D, float]
+        DESCRIPTION.
+    E : float, optional
+        DESCRIPTION. The default is 29000.
+
+    Returns
+    -------
+    Array1D
+        DESCRIPTION.
+
+    """
+
+    assert np.all(D/t < 0.45*E/Fy), "F8 does not apply if D/t > 0.45 E/Fy"
+
+    # Yielding (AISC F8-1)
+    Mp = Fy*Z
+
+    # Local buckling
+    lambda_p = 0.07 * E/Fy  # Limiting ratio for compact/noncompact section
+    lambda_r = 0.31 * E/Fy  # Limiting ratio for noncompact/slender section
+
+    is_slender = D/t >= lambda_r
+    is_compact = D/t < lambda_p
+
+    # Noncompact sections
+    Mn_noncompact = (0.021*E/(D/t) + Fy) * S
+
+    # Slender sections
+    Fcr = 0.33*E/(D/t)
+    Mn_slender = Fcr * S
+
+    Mn = np.where(is_compact,
+                  Mp,
+                  np.where(is_slender,
+                           np.minimum(Mp, Mn_slender),
+                           np.minimum(Mp, Mn_noncompact)
+                           )
+                  )
+    phiMn = 0.9*Mn
+    return phiMn
 
 
 def H1_interaction(Pr: Array1D,
@@ -307,10 +368,16 @@ def H1_interaction(Pr: Array1D,
 
     """
 
+    assert np.all(Pr > 0) if Pr[0] > 0 else np.all(Pr < 0), \
+        "Not all forces have the same sign, are some columns in tension?"
+    Pr = np.abs(Pr)
+
+    M_total_int = np.abs(Mrx)/Mcx + np.abs(Mry)/Mcy
+
     # AISC H1
     DCR = np.where(Pr/Pc >= 0.2,
-                   Pr/Pc + 8/9 * (Mrx/Mcx + Mry/Mcy),
-                   Pr/Pc/2 + (Mrx/Mcx + Mry/Mcy)
+                   Pr/Pc + 8/9 * M_total_int,
+                   Pr/Pc/2 + M_total_int
                    )
 
     return DCR

@@ -98,25 +98,33 @@ def E3_compression(A: Array1D,
     return phiPn
 
 
-def F2_flexure_major(section: Union[Array1D, None],
-                     ho: Union[Array1D, None],
-                     J: Union[Array1D, None],
-                     Sx: Union[Array1D, None],
-                     Zx: Union[Array1D, None],
-                     ry: Union[Array1D, None],
-                     rts: Union[Array1D, None],
+def F2_flexure_major(Lb: Array1D,
                      Fy: Array1D,
-                     Lb: Array1D,
-                     Iy: Union[Array1D, None],
-                     Cw: Union[Array1D, None],
+                     section_type: Union[Array1D, None] = None,
+                     ho: Union[Array1D, None] = None,
+                     J: Union[Array1D, None] = None,
+                     Sx: Union[Array1D, None] = None,
+                     Zx: Union[Array1D, None] = None,
+                     ry: Union[Array1D, None] = None,
+                     rts: Union[Array1D, None] = None,
+                     Iy: Union[Array1D, None] = None,
+                     Cw: Union[Array1D, None] = None,
+                     props: Union[dict, None] = None,
                      Cb: Array1D = 1.0,
-                     E: float = 29000,
-                     shapes: Union[dict, None] = None) -> Array1D:
+                     E: float = 29000) -> Array1D:
     r"""
     AISC Chapter F Design of Members for Flexure (F2)
 
     Parameters
     ----------
+    Lb : Union[Array1D, float]
+        Length between points that are either braced against lateral
+        displacement fo compression flange or braced against twist of the cross
+        section (in. or mm).
+    Fy : Union[Array1D, float]
+        Specified minimum yield strength (ksi or MPa).
+    section_type : Union[Array1D, None]
+        String indicating section type ('W' or 'C')
     ho : Union[Array1D, None]
         Distance between flange centroids (in. or mm).
     J : Union[Array1D, None]
@@ -131,25 +139,19 @@ def F2_flexure_major(section: Union[Array1D, None],
         Radius of gyration about the y-axis (in. or mm).
     rts : Union[Array1D, None]
         Effective radius of gyration (in. or mm).
-    Fy : Union[Array1D, float]
-        Specified minimum yield strength (ksi or MPa).
-    Lb : Union[Array1D, float]
-        Length between points that are either braced against lateral
-        displacement fo compression flange or braced against twist of the cross
-        section (in. or mm).
     Iy : Union[Array1D, None]
         Moment of intertia about the channel weak axis, for channels only
         (in^4 or mm^4).
     Cw : Union[Array1D, None]
         Warping constant (in^6 or mm^6).
+    props : Union[dict, None], optional
+        Optionally pass in section properties in a dict or DataFrame.
+        The default is None.
     Cb : Union[Array1D, float], optional
         Lateral-torsional buckling modification factor for non-uniform moment
         diagrams. The default is 1.0.
     E : float, optional
         Modulus of elasticity of steel. 29000 ksi (200,000 MPa)
-    shapes : Union[dict, None], optional
-        Optionally pass in section properties in a dict or DataFrame.
-        The default is None.
 
     Returns
     -------
@@ -158,26 +160,24 @@ def F2_flexure_major(section: Union[Array1D, None],
 
     """
 
-    # TODO consider removing option to pass dict, currently for convenience
-    if shapes is not None:
-        section = shapes['Type']
-        ho = shapes['ho']
-        J = shapes['J']
-        Sx = shapes['Sx']
-        Zx = shapes['Zx']
-        ry = shapes['ry']
-        rts = shapes['rts']
-        # only used for channels, might throw error
-        Iy = shapes['Iy']
-        Cw = shapes['Cw']
+    if props is not None:
+        section = props['Type']
+        ho = props['ho'].astype('float64')
+        J = props['J'].astype('float64')
+        Sx = props['Sx'].astype('float64')
+        Zx = props['Zx'].astype('float64')
+        ry = props['ry'].astype('float64')
+        rts = props['rts'].astype('float64')
+        # only used for channels
+        if np.any(section == 'C'):
+            Iy = props['Iy'].astype('float64')
+            Cw = props['Cw'].astype('float64')
 
     # AISC F2-8
-    c = np.where(section == "W",  # TODO: infer section type from name?
-                 1,
-                 np.where(section == 'C',
-                          ho / 2 * np.sqrt(Iy/Cw),
-                          )
-                 )
+    assert np.all((section == 'W') | (section == 'C')), \
+        """section_type array contains elements other than 'W' or 'C'.
+        F2 is only defined for W or C shapes"""
+    c = np.where(section == "W", 1, ho / 2 * np.sqrt(Iy/Cw))
 
     # Plastic moment (AISC F2-1)
     Mp = Fy * Zx
@@ -335,6 +335,133 @@ def F8_flexure_round_hss(D: Array1D,
                            )
                   )
     phiMn = 0.9*Mn
+    return phiMn
+
+
+def F9_flexure_t_2l(shape: Union[Array1D, str],
+                    stem_tension: Union[Array1D, bool],
+                    d: Array1D,
+                    tw: Array1D,
+                    Sx: Array1D,
+                    Zx: Array1D,
+                    J: Array1D,
+                    Iy: Array1D,
+                    y: Array1D,
+                    lambda_f: Array1D,  # bf/2tf
+                    Lb: Array1D,
+                    Fy: Array1D,
+                    E: float = 29000,
+                    G: float = 11200) -> Array1D:
+    """
+    Flexural capacity of Tee sections and double angles following AISC section
+    F9.
+
+    Parameters
+    ----------
+    shape : Union[Array1D, str]
+        DESCRIPTION.
+    stem_tension : Union[Array1D, bool]
+        DESCRIPTION.
+    d : Array1D
+        DESCRIPTION.
+    tw : Array1D
+        DESCRIPTION.
+    Sx : Array1D
+        Elastic section modulus taken about the :math:`x`-axis,
+        :math:`in^3 (mm^3)`.
+    Zx : Array1D
+        Plastic section modulus taken about the :math:`x`-axis,
+        :math:`in^3 (mm^3)`.
+    J : Array1D
+        Torsional constant (in^4 or mm^4).
+    Iy : Array1D
+        Moment of intertia about the weak axis (in^4 or mm^4).
+    y : Array1D
+        DESCRIPTION.
+    lambda_f : Array1D
+        DESCRIPTION.# bf/2tf
+    Lb : Array1D
+        DESCRIPTION.
+    Fy : Array1D
+        DESCRIPTION.
+    E : float, optional
+        DESCRIPTION. The default is 29000.
+    G : float, optional
+        DESCRIPTION. The default is 11200.
+
+    Returns
+    -------
+    Array1D
+        DESCRIPTION.
+
+    """
+    import warnings
+    warnings.warn("F9 provisions might not be correctly implemented.",
+                  UserWarning)
+
+    # TODO: which provision apply to double angles, which to T's?
+    # maybe this needs to be two functions?
+    # TODO: test behavior - how is tension boolean handled?
+
+    # 1. Yielding (AISC F9-2, F9-3)
+    Mp = np.where(stem_tension,
+                  np.minimum(Fy*Zx, 1.6*Fy*Sx),
+                  np.minimum(Fy*Zx, Fy*Sx)
+                  )
+
+    # 2. Lateral-torsional Buckling (AISC F9-4)
+    B = np.where(stem_tension, 1, -1) * 2.3 * (d / Lb) * np.sqrt(Iy / J)
+    Mcr = np.pi * np.sqrt(E * Iy * G * J)/Lb * (B + np.sqrt(1 + B**2))
+
+    # 3. Flange Local Buckling of Tees #
+    # This assumes flanges in flexural compression (stem in tension)
+
+    # TODO verify correct case
+    # Width-to-thickness ratios: AISC TABLE B4.1b Case 10
+    # Limiting ratio for compact/noncompact section
+    lambda_pf = 0.38 * np.sqrt(E / Fy)
+
+    # Limiting ratio for noncompact/slender section
+    lambda_rf = np.sqrt(E / Fy)
+
+    is_compact = lambda_f <= lambda_pf
+    is_slender = lambda_f >= lambda_rf
+
+    # Nominal flexural strength
+    S_xc = Iy / y  # elastic section modulus referred to the compression flange
+    Mn_flb = np.where(is_compact,
+                      np.inf,  # flange local buckling does not apply
+                      np.where(is_slender,
+                               0.7 * E * S_xc / lambda_f**2,
+                               np.minimum(Mp - (Mp - 0.7*Fy*S_xc) *\
+                                          (lambda_f - lambda_pf) /\
+                                          (lambda_rf - lambda_pf),
+                                          1.6 * Fy * Sx)
+                               )
+                      )
+
+    # 4. Local Buckling of Tee Stems in Flexural Compression
+    d_div_tw = d/tw
+    Fcr = np.where(d_div_tw <= 0.84 * np.sqrt(E/Fy),
+                   Fy,
+                   np.where(d_div_tw <= 1.03 * np.sqrt(E/Fy),
+                            Fy*(2.55 - 1.84 * d_div_tw * np.sqrt(Fy/E)),
+                            0.69*E/d_div_tw**2)
+                   )
+    Mn_slb = Fcr * Sx
+
+    # Clauses 1 & 2
+    Mn_tension = np.minimum(Mp, Mcr)
+
+    # Clauses 3 & 4
+    # TODO: fix logic. do we need to return different phiMn for each axis?
+    Mn_lb = np.minimum(Mn_flb,
+                       np.where(stem_tension,
+                                np.inf,
+                                Mn_slb)
+                       )
+
+    phiMn = 0.9*np.minimum(Mn_tension, Mn_lb)
     return phiMn
 
 

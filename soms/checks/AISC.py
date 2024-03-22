@@ -172,6 +172,9 @@ def F2_flexure_major(Lb: Array1D,
         if np.any(section == 'C'):
             Iy = props['Iy'].astype('float64')
             Cw = props['Cw'].astype('float64')
+        else:
+            Iy = 0.0
+            Cw = 1.0
 
     # AISC F2-8
     assert np.all((section == 'W') | (section == 'C')), \

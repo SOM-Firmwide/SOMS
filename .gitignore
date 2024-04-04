@@ -45,7 +45,6 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
-.pytest_cache/
 
 # Translations
 *.mo
@@ -101,10 +100,21 @@ ENV/
 # mypy
 .mypy_cache/
 
-# IDE settings
-.vscode/
-.idea/
+# ==============================================================================
+# soms
+# ==============================================================================
 
-# Google Drive
-desktop.ini
+*.3dmbak
+*.rhl
+*.rui_bak
 
+temp/**
+!temp/PLACEHOLDER
+
+.DS_Store
+
+.vscode
+
+docs/api/generated/
+
+conda.recipe/

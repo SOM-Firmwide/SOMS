@@ -1,5 +1,6 @@
-import comtypes.client;
-import sys;
+import comtypes.client
+import sys
+
 
 class SAP:
     """Class to call SAP using CSi API and extract results or construct and run the model.
@@ -11,7 +12,7 @@ class SAP:
     @property
     def client(self):
         return self._client
-    
+
     @client.setter
     def client(self, client):
         self._client = client
@@ -27,11 +28,11 @@ class SAP:
         """
         # Attach a running instance of ETABS
         try:
-            EtabsObject=comtypes.client.GetActiveObject("CSI.ETABS.API.ETABSObject")
-        except (OSError,comtypes.COMError):
+            EtabsObject = comtypes.client.GetActiveObject("CSI.ETABS.API.ETABSObject")
+        except (OSError, comtypes.COMError):
             print("No running instance of the program found or failed to attach.")
             sys.exit(-1)
 
         self.client = EtabsObject.SapModel
-            
+
         return

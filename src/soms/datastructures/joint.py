@@ -2,6 +2,7 @@
 
 from compas.geometry import Point
 
+
 class Joint(Point):
     """A joint defined by XYZ positions
 
@@ -29,7 +30,7 @@ class Joint(Point):
     @property
     def x(self):
         return self._x
-    
+
     @x.setter
     def x(self, x):
         self._x = float(x)
@@ -37,7 +38,7 @@ class Joint(Point):
     @property
     def y(self):
         return self._y
-    
+
     @y.setter
     def y(self, y):
         self._y = float(y)
@@ -45,7 +46,7 @@ class Joint(Point):
     @property
     def z(self):
         return self._z
-    
+
     @z.setter
     def z(self, z):
         self._z = float(z)
@@ -53,18 +54,16 @@ class Joint(Point):
     @property
     def restraint(self):
         return self._restraint
-    
+
     @restraint.setter
     def restraint(self, value):
         try:
             iter(value)
             if len(value) == 3:
                 self._restraint = [value[0], value[1], value[2], False, False, False]
-            elif len(value) ==6:
+            elif len(value) == 6:
                 self._restraint = value
             else:
                 raise ValueError("Please provide an restraint interable with length 3 or 6")
-        except:
+        except Exception:
             raise ValueError("Please provide an restraint interable with length 3 or 6")
-
-

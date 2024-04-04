@@ -17,25 +17,12 @@ soms.datastructures
 
 """
 
-from .frame import(
-    Frame
-)
+from .frame import Frame
 
-from .joint import(
-    Joint
-)
+from .joint import Joint
 
-from .area import(
-    Area
-)
+from .area import Area
 
-from .structure import(
-    Structure
-)
+from .structure import Structure
 
-__all__ = [
-    'Frame',
-    'Joint',
-    'Area',
-    'Structure'
-]
+__all__ = ["Frame", "Joint", "Area", "Structure"]

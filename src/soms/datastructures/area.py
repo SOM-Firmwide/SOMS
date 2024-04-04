@@ -2,6 +2,7 @@
 
 from compas.geometry import Polygon
 
+
 class Area(Polygon):
     def __init__(self, points=None, name=None):
         self.name = name
@@ -12,7 +13,7 @@ class Area(Polygon):
     @property
     def points(self):
         return self._points
-    
+
     @points.setter
     def points(self, points):
         self._points = points

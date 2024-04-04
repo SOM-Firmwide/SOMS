@@ -1,8 +1,9 @@
-import comtypes.client;
-import sys;
+import comtypes.client
+import sys
 from soms.datastructures import Frame
 from soms.datastructures import Joint
 from soms.datastructures import Area
+
 
 class ETABS:
     """Class to call ETABS using CSi API and extract results or construct and run the model.
@@ -16,7 +17,7 @@ class ETABS:
     @property
     def client(self):
         return self._client
-    
+
     @client.setter
     def client(self, client):
         self._client = client
@@ -24,7 +25,7 @@ class ETABS:
     @property
     def model(self):
         return self._model
-    
+
     @model.setter
     def model(self, model):
         self._model = model
@@ -38,18 +39,18 @@ class ETABS:
         cOAPI Pointer
             EtabsObject
         """
-        
+
         session = cls()
 
         try:
-            EtabsObject=comtypes.client.GetActiveObject("CSI.ETABS.API.ETABSObject")
-        except (OSError,comtypes.COMError):
+            EtabsObject = comtypes.client.GetActiveObject("CSI.ETABS.API.ETABSObject")
+        except (OSError, comtypes.COMError):
             print("No running instance of the program found or failed to attach.")
             sys.exit(-1)
 
         session.client = EtabsObject
         session.model = EtabsObject.SapModel
-            
+
         return session
 
     @classmethod
@@ -66,11 +67,9 @@ class ETABS:
         cOAPI Pointer
             EtabsObject
         """
-        
-        session = cls()
 
-        return NotImplementedError("")
-    
+        return NotImplementedError("Command in development.")
+
     def disconnect(self, close=True):
         """Disconnect form the running instance
 
@@ -82,7 +81,7 @@ class ETABS:
 
         if close:
             self.client.ApplicationExit(False)
-        
+
         self.client = None
 
     def run(self):
@@ -95,7 +94,7 @@ class ETABS:
         """
         if not self.client:
             return ValueError("ETABS Client not initialized")
-        
+
         self.client.Analyze.RunAnalysis()
 
     def define_material(self):
@@ -108,22 +107,23 @@ class ETABS:
         """
         if not self.client:
             return ValueError("ETABS Client not initialized")
-        
+
         self.client.PropMaterial.SetMaterial()
-    
+
     def GetFrames(self):
         if not self.client:
             return ValueError("ETABS Client not initialized")
 
         ret = self.model.FrameObj.GetAllFrames()
-        NumberNames, MyName, PropName, StoryName, PointName1, PointName2, Point1X, Point1Y, Point1Z, Point2X, Point2Y, Point2Z, Angle, Offset1X, Offset2X, Offset1Y, Offset2Y, Offset1Z, Offset2Z, CardinalPoint, csys = ret
+        NumberNames, MyName, PropName, StoryName, PointName1, PointName2, Point1X, Point1Y, Point1Z, Point2X, Point2Y, \
+            Point2Z, Angle, Offset1X, Offset2X, Offset1Y, Offset2Y, Offset1Z, Offset2Z, CardinalPoint, csys = ret
 
         dict = {}
         key_name = {}
         key = 0
         for i in range(NumberNames):
-            p1 = Joint(Point1X[i], Point1Y[i], Point1Z[i], name = PointName1[i])
-            p2 = Joint(Point2X[i], Point2Y[i], Point2Z[i], name = PointName2[i])
+            p1 = Joint(Point1X[i], Point1Y[i], Point1Z[i], name=PointName1[i])
+            p2 = Joint(Point2X[i], Point2Y[i], Point2Z[i], name=PointName2[i])
             frame = Frame(p1, p2, section=PropName[i], name=MyName[i])
             frame.StoryName = StoryName[i]
             frame.Angle = Angle[i]
@@ -151,7 +151,7 @@ class ETABS:
         key = 0
         for i in range(NumberNames):
             ret, _ = self.model.PointObj.GetRestraint(MyName[i])
-            pt = Joint(X[i], Y[i], Z[i], name = MyName[i])
+            pt = Joint(X[i], Y[i], Z[i], name=MyName[i])
             pt.restraint = ret
             dict[key] = pt
             key_name[key] = MyName[i]
@@ -167,7 +167,8 @@ class ETABS:
             return ValueError("ETABS Client not initialized")
 
         ret = self.model.AreaObj.GetAllAreas()
-        NumberNames, MyName, DesignOrientation, NumberBoundaryPts, PointDelimiter, PointNames, PointX, PointY, PointZ, _ = ret
+        NumberNames, MyName, DesignOrientation, NumberBoundaryPts, PointDelimiter, \
+            PointNames, PointX, PointY, PointZ, _ = ret
 
         dict = {}
         key_name = {}

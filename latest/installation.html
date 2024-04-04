@@ -302,6 +302,10 @@ document.write(`
   
 
   
+    <label class="sidebar-toggle secondary-toggle" for="__secondary">
+      <span class="fa-solid fa-outdent"></span>
+    </label>
+  
 </div>
 
     </nav>
@@ -538,6 +542,35 @@ document.write(`
                   
   <section id="installation">
 <span id="id1"></span><h1>Installation</h1>
+<section id="create-a-conda-environment">
+<h2>Create a conda environment</h2>
+<p>The basic prerequisite to install <code class="docutils literal notranslate"><span class="pre">soms</span></code> is <a class="reference external" href="https://www.anaconda.com/products/individual">Anaconda</a>. Install Anaconda on you machine and go to the next step.</p>
+<p>After you conclude the Anaconda Installation, open the <code class="docutils literal notranslate"><span class="pre">Anaconda</span> <span class="pre">Prompt</span></code> that comes with it. We are going to create an environment using the prompt and install <code class="docutils literal notranslate"><span class="pre">soms</span></code> in this environment. To learn more about Conda Environments check out this <a class="reference external" href="https://edcarp.github.io/introduction-to-conda-for-data-scientists/02-working-with-environments/index.html">link</a>.</p>
+<p>We will create a new environment named <code class="docutils literal notranslate"><span class="pre">soms</span></code> with Python 3. We will install <code class="docutils literal notranslate"><span class="pre">soms</span></code> package and the open-source dependency <a class="reference external" href="https://compas.dev">COMPAS</a> and Git.</p>
+<p>Open the Anaconda Prompt/terminal and type the following to create a new environmenment and install the dependencies:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>soms<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10<span class="w"> </span>COMPAS<span class="w"> </span>git
+</pre></div>
+</div>
+<p>If you are in OSX use:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>soms<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10<span class="w"> </span>python.app<span class="w"> </span>COMPAS<span class="w"> </span>git
+</pre></div>
+</div>
+<p>The base environment is active by default. Activate the <code class="docutils literal notranslate"><span class="pre">soms</span></code> environment with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>activate<span class="w"> </span>soms
+</pre></div>
+</div>
+</section>
+<section id="installing-soms">
+<h2>Installing soms</h2>
+<p>The most direct way to work with <code class="docutils literal notranslate"><span class="pre">compas_tno</span></code> is by cloning the repository to your local drive. This is the equivalend of downloading the source files and unzipping it in a predetermined location in your machine.</p>
+<p>Create a folder to store the code. We suggest something like <code class="docutils literal notranslate"><span class="pre">C:/Code/</span></code> if you are in Windows. Navigate in the terminal to the folder. If you are new to using the teminal, check out this guide to orient yourself  <a class="reference external" href="https://gomakethings.com/navigating-the-file-system-with-terminal/">here</a>. When you are in the folder type:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/SOM-Firmwide/SOMS.git
+<span class="nb">cd</span><span class="w"> </span>soms
+pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>This install <code class="docutils literal notranslate"><span class="pre">soms</span></code>, the base required COMPAS packages and Git.</p>
+</section>
 </section>
 
 
@@ -552,6 +585,21 @@ document.write(`
             </div>
             
             
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#create-a-conda-environment">Create a conda environment</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installing-soms">Installing soms</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
               
             
           </div>

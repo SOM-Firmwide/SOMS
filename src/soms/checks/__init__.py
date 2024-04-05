@@ -1,9 +1,23 @@
-"""Code Checks"""
+"""
+********************************************************************************
+soms.checks
+********************************************************************************
 
-__author__ = """SOM"""
-__email__ = 'ricardo.avelino@som.com'
-__version__ = '0.1.0'
+.. currentmodule:: soms.checks
 
+
+.. autosummary::
+    :toctree: generated/
+    :nosignatures:
+
+    P_delta
+    E3_compression
+    F2_flexure_major
+    F6_flexure_minor
+    F8_flexure_round_hss
+    H1_interaction
+
+"""
 
 from .AISC import (
     P_delta,

@@ -1,4 +1,19 @@
-"""Connectors"""
+"""
+********************************************************************************
+soms.connectors
+********************************************************************************
+
+.. currentmodule:: soms.connectors
+
+
+.. autosummary::
+    :toctree: generated/
+    :nosignatures:
+
+    ETABS
+    SAP
+
+"""
 
 
 from .etabs import (

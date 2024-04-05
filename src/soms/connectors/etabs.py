@@ -141,7 +141,7 @@ class ETABS:
 
     def GetJoints(self):
         if not self.client:
-            return ValueError("ETABS Client not initialized")
+            return ValueError("ETABS Client not initialized. Check")
 
         ret = self.model.PointObj.GetAllPoints()
         NumberNames, MyName, X, Y, Z, cys = ret

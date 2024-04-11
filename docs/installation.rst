@@ -35,7 +35,7 @@ The base environment is active by default. Activate the ``soms`` environment wit
 Installing soms
 =====================
 
-The most direct way to work with ``compas_tno`` is by cloning the repository to your local drive. This is the equivalend of downloading the source files and unzipping it in a predetermined location in your machine. 
+The most direct way to work with ``SOMS`` is by cloning the repository to your local drive. This is the equivalend of downloading the source files and unzipping it in a predetermined location in your machine. 
 
 Create a folder to store the code. We suggest something like ``C:/Code/`` if you are in Windows. Navigate in the terminal to the folder. If you are new to using the teminal, check out this guide to orient yourself  `here <https://gomakethings.com/navigating-the-file-system-with-terminal/>`_. When you are in the folder type:
 

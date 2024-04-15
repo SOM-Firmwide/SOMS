@@ -83,7 +83,11 @@ phi = pd.Series({'Fbx_pos': 0.85,
 C_I = 1.0
 
 
-def get_C_C(t_lam: ArrayLike, R: ArrayLike) -> ArrayLike:
+def get_CI(*args):
+    raise NotImplementedError("Stress interaction factor not yet implemented.")
+
+
+def get_CC(t_lam: ArrayLike, R: ArrayLike) -> ArrayLike:
     r"""
     NDS 5.3.8: Curvature factor, :math:`C_C`.
 
@@ -97,7 +101,7 @@ def get_C_C(t_lam: ArrayLike, R: ArrayLike) -> ArrayLike:
     Returns
     -------
     ArrayLike
-        DESCRIPTION.
+        Curvature factor, :math:`C_C`.
 
     """
     R = np.absolute(R)
@@ -118,7 +122,7 @@ def get_Cvr(shape: str | ArrayLike) -> ArrayLike:
     Returns
     -------
     ArrayLike
-        DESCRIPTION.
+        Shear Reduction Factor, :math:`C_{vr}`.
 
     """
     assert np.all((shape == 'Rectangular') | (shape == "Nonprismatic")), \
@@ -153,7 +157,7 @@ def R_B(d: ArrayLike, b: ArrayLike,
     Returns
     -------
     ArrayLike
-        DESCRIPTION.
+        Slenderness ratio for bending.
 
     """
     # TODO: verify this implementation
@@ -290,7 +294,7 @@ def get_CV(species: str,
     Returns
     -------
     ArrayLike
-        DESCRIPTION.
+        Volume factor, :math:`C_V`.
 
     """
     # x is 20 for Souther pine and 10 for all other species
@@ -455,7 +459,48 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 # %% Core Functions
 
 
-def get_factors(df: pd.DataFrame, method: str) -> pd.DataFrame:
+class NDSGluLamDesigner:
+
+    def __init__(self, section_properties: pd.DataFrame,
+                 load_combos_w_time_factors: pd.DataFrame = None,
+                 method: str = None, condition=None, temp=None, time=None) -> object:
+
+        self.method = method
+        self.condition = condition
+        self.temp = temp
+
+        if method == 'LRFD':
+            assert np.all(~np.isnan(load_combos_w_time_factors['lambda']))
+            # We want to operate on combinations of section/load combinations
+            # We take the cartesian product of section and load combos/time factors
+            self.df_props = pd.merge(section_properties,
+                                     load_combos_w_time_factors,
+                                     how='cross')
+            print(
+                f"Loaded {len(section_properties)} unique section properties"
+                f" and {len(load_combos_w_time_factors)} load combinations."
+            )
+        elif method == 'ASD':
+            self.df_props = section_properties
+            self.time = time
+
+        table = get_factors(self.df_props, self.method,
+                            self.condition, self.temp, time=self.time)
+        self.table = apply_factors(
+            table, self.method, self.condition, self.temp)
+
+        print(
+            f"""Initialized {method} property table of shape {
+                self.table.shape}."""
+        )
+
+    def table_from_row(self, idx):
+        return table_from_df(self.table.iloc[idx], self.method, self.condition, self.temp, time=self.time)
+
+# TODO: make condition, temp, time, row-wise
+
+
+def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None) -> pd.DataFrame:
     """
     Calculate adjustment factors for a DataFrame input of section properties.
     The section properties must include:
@@ -492,7 +537,7 @@ def get_factors(df: pd.DataFrame, method: str) -> pd.DataFrame:
 
     df['Cb'] = get_Cb(df['lb'])
 
-    df['CC'] = get_C_C(df['t_lam'], df['R'])
+    df['CC'] = get_CC(df['t_lam'], df['R'])
 
     df['Lex'] = _Lex = get_Le(df['coeff_lu'],
                               df['lux'],
@@ -546,7 +591,7 @@ def get_factors(df: pd.DataFrame, method: str) -> pd.DataFrame:
     return df
 
 
-def apply_factors(df: pd.DataFrame, method: str) -> pd.DataFrame:
+def apply_factors(df: pd.DataFrame, method: str, condition, temp) -> pd.DataFrame:
     r"""
     Given a DataFrame containing section properties and adjustment factors,
      this function computes the adjusted design values :math:`F'`.
@@ -648,9 +693,9 @@ def _apply_factors_complete(row, factor_mapping):
 # Set up Adjustment Factors Table
 
 
-def table_from_df(row: pd.Series, method: str) -> pd.DataFrame:
+def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd.DataFrame:
     r"""
-    Display a row of a dataframe as NDS adjustment table.
+    Display a row of a dataframe as NDS table 5.3.1.
 
     Parameters
     ----------
@@ -750,28 +795,112 @@ def table_from_df(row: pd.Series, method: str) -> pd.DataFrame:
 # %% Define NDS strength check functions
 
 
-def nds_flexure(M, S, adj_Fbx):
-    # Flexure Check (NDS Section 3.3)
+def nds_flexure(M: ArrayLike, S: ArrayLike, adj_Fbx: ArrayLike) -> ArrayLike:
+    r"""
+    Flexure Check (NDS Section 3.3)
+
+    Parameters
+    ----------
+    M : ArrayLike
+        Bending moment, kip-ft.
+    S : ArrayLike
+        Section modulus, :math:`in^3`.
+    adj_Fbx : ArrayLike
+        Adjusted bending design value, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Flexural DCR.
+
+    """
     fbx = np.abs(M) * 1000 * 12 / S
     return fbx/adj_Fbx
 
 
-def nds_compression(P, A_net, adj_Fc):
-    # Compression Parallel to Grain (NDS Section 3.6)
+def nds_compression(P: ArrayLike,
+                    A_net: ArrayLike,
+                    adj_Fc: ArrayLike) -> ArrayLike:
+    r"""
+    Compression Parallel to Grain (NDS Section 3.6)
+
+    Parameters
+    ----------
+    P : ArrayLike
+        Axial compressive load, kips.
+    A_net : ArrayLike
+        Net section of area, :math:`in^2`.
+    adj_Fc : ArrayLike
+        Adjusted compression design value, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Compressive DCR parallel to grain.
+
+    """
     compression = np.where(P < 0, -P, 0)
     fc = compression/A_net * 1000
     return fc/adj_Fc
 
 
-def nds_tension(P, A_net, adj_Ft):
-    # Tension Check (NDS Section 3.8)
+def nds_tension(P: ArrayLike,
+                A_net: ArrayLike,
+                adj_Ft: ArrayLike) -> ArrayLike:
+    r"""
+    Tension Check (NDS Section 3.8)
+
+    Parameters
+    ----------
+    P : ArrayLike
+        Axial tensile load, kips.
+    A_net : ArrayLike
+        Net section of area, :math:`in^2`.
+    adj_Ft : ArrayLike
+        Adjusted tensile design value, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Tensile DCR.
+
+    """
     tension = np.where(P > 0, P, 0)
     ft = tension/A_net * 1000
     return ft/adj_Ft
 
 
-def nds_shear(V2, V3, A, axis_orientation, adj_Fvx, adj_Fvy):
-    # Shear Check - Parallel to Grain (NDS Section 3.4)
+def nds_shear(V2: ArrayLike,
+              V3: ArrayLike,
+              A: ArrayLike,
+              axis_orientation: ArrayLike,
+              adj_Fvx: ArrayLike,
+              adj_Fvy: ArrayLike) -> ArrayLike:
+    r"""
+    Shear Check - Parallel to Grain (NDS Section 3.4).
+     For rectangular sections only.
+
+    Parameters
+    ----------
+    V2 : ArrayLike
+        Shear (major), kips.
+    V3 : ArrayLike
+        Shear (minor), kips.
+    A : ArrayLike
+        Section area of rectangular section, :math:`in^2`.
+    axis_orientation : ArrayLike
+        Axis orientation of member per Fig 5A (x-x or y-y).
+    adj_Fvx : ArrayLike
+        Adjusted major shear design value, psi.
+    adj_Fvy : ArrayLike
+        Adjusted minor shear design value, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Shear DCR.
+
+    """
     fv = np.where(axis_orientation == 'x-x',
                   3*np.abs(V2)*1000/(2*A),
                   3*np.abs(V3)*1000/(2*A)
@@ -780,8 +909,54 @@ def nds_shear(V2, V3, A, axis_orientation, adj_Fvx, adj_Fvy):
     return fv/Fv_p
 
 
-def nds_bending_axial_tension(P, M2, M3, b, d, A_net, adj_Ft, adj_Fbx_pos, adj_Fby, CL_x, CL_y, CV):
-    # Bending + Axial Tension Check (NDS Section 3.9.1)
+def nds_bending_axial_tension(P: ArrayLike,
+                              M2: ArrayLike,
+                              M3: ArrayLike,
+                              b: ArrayLike,
+                              d: ArrayLike,
+                              A_net: ArrayLike,
+                              adj_Ft: ArrayLike,
+                              adj_Fbx_pos: ArrayLike,
+                              adj_Fby: ArrayLike,
+                              CL_x: ArrayLike,
+                              CL_y: ArrayLike,
+                              CV: ArrayLike) -> ArrayLike:
+    r"""
+    Bending + Axial Tension Check (NDS Section 3.9.1)
+
+    Parameters
+    ----------
+    P : ArrayLike
+        Axial compressive load, kips.
+    M2 : ArrayLike
+        Minor bending moment, kip-ft.
+    M3 : ArrayLike
+        Major bending moment, kip-ft.
+    b : ArrayLike
+        Breadth of rectangular bending member, inches.
+    d : ArrayLike
+        Depth of bending member, inches.
+    A_net : ArrayLike
+        Net section of area, :math:`in^2`.
+    adj_Ft : ArrayLike
+        Adjusted tensile design value, psi.
+    adj_Fbx_pos : ArrayLike
+        Adjusted major bending design value, psi.
+    adj_Fby : ArrayLike
+        Adjusted minor bending design value, psi..
+    CL_x : ArrayLike
+        Beam stability factor, major axis, :math:`C_{Lx}`.
+    CL_y : ArrayLike
+        Beam stability factor, minor axis, :math:`C_{Ly}`.
+    CV : ArrayLike
+        Volume factor, :math:`C_V`.
+
+    Returns
+    -------
+    ArrayLike
+        Interaction bending/tension DCR.
+
+    """
     Fbx_star = adj_Fbx_pos/CL_x
     Fby_star = adj_Fby/CL_y
     Fbx_starstar = adj_Fbx_pos/CV
@@ -798,10 +973,64 @@ def nds_bending_axial_tension(P, M2, M3, b, d, A_net, adj_Ft, adj_Fbx_pos, adj_F
     return np.maximum(SR1, SR2)
 
 
-def nds_bending_axial_compression(P, M2, M3, b, d, axis_orientation, lex, ley, Lex,
-                                  Ley, E_minp, A_net, adj_Fc, adj_Fbx_pos, adj_Fby):
-    # TODO: veridy this implementation
-    # Bending + Axial Compression or Biaxial Bending (NDS Section 3.9.2)
+def nds_bending_axial_compression(P: ArrayLike,
+                                  M2: ArrayLike,
+                                  M3: ArrayLike,
+                                  b: ArrayLike,
+                                  d: ArrayLike,
+                                  axis_orientation: ArrayLike,
+                                  lex: ArrayLike,
+                                  ley: ArrayLike,
+                                  Lex: ArrayLike,
+                                  Ley: ArrayLike,
+                                  E_minp: ArrayLike,
+                                  A_net: ArrayLike,
+                                  adj_Fc: ArrayLike,
+                                  adj_Fbx_pos: ArrayLike,
+                                  adj_Fby: ArrayLike) -> ArrayLike:
+    r"""
+    Bending + Axial Compression or Biaxial Bending (NDS Section 3.9.2)
+
+    Parameters
+    ----------
+    P : ArrayLike
+        Axial compressive load, kips.
+    M2 : ArrayLike
+        Minor bending moment, kip-ft.
+    M3 : ArrayLike
+        Major bending moment, kip-ft.
+    b : ArrayLike
+        Breadth of rectangular bending member, inches.
+    d : ArrayLike
+        Depth of bending member, inches.
+    axis_orientation : ArrayLike
+        Axis orientation of member per Fig 5A (x-x or y-y).
+    lex : ArrayLike
+        Effective length of compression member with respect to x-x axis, feet.
+    ley : ArrayLike
+        Effective length of compression member with respect to y-y axis, feet.
+    Lex : ArrayLike
+        Effective length of bending member with respect to x-x axis, feet.
+    Ley : ArrayLike
+        Effective length of bending member with respect to y-y axis, feet.
+    E_minp : ArrayLike
+        Adjusted modulus of elasticity for stability calculations, psi.
+    A_net : ArrayLike
+        Net section of area, :math:`in^2`.
+    adj_Fc : ArrayLike
+        Adjusted compression design value, psi.
+    adj_Fbx_pos : ArrayLike
+        Adjusted major bending design value, psi.
+    adj_Fby : ArrayLike
+        Adjusted minor bending design value, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Interaction bending/compression DCR.
+
+    """
+    # TODO: rename E_minp, reorder args, rename lex/ley, Lex/Ley (confusing)
 
     Sx = 1/6*b*d**2
     Sy = 1/6*d*b**2
@@ -811,21 +1040,22 @@ def nds_bending_axial_compression(P, M2, M3, b, d, axis_orientation, lex, ley, L
     FcEx = 0.822 * E_minp / (lex*12/dx)**2
     FcEy = 0.822 * E_minp / (ley*12/dy)**2
 
-    # fc/FcEx
-    # fc/FcEy
-
     RBx = R_B(d, b, Lex, 'x-x', axis_orientation)
     RBy = R_B(d, b, Ley, 'y-y', axis_orientation)
 
     FbEx = 1.2*E_minp / RBx**2
+    # FbEy = 1.2*E_minp / RBy**2
 
-    FbEy = 1.2*E_minp / RBy**2
     compression = np.where(P < 0, -P, 0)
     fc = compression/A_net * 1000
     fbx = np.abs(M3) * 1000 * 12 / Sx
     fby = np.abs(M2) * 1000 * 12 / Sy
 
-    return (fc/adj_Fc)**2 + fbx/(adj_Fbx_pos*(1 - fc/FcEx)) + fby/(adj_Fby*(1 - fc/FcEy))
+    SR1 = (fc/adj_Fc)**2 + fbx/(adj_Fbx_pos*(1 - fc/FcEx)) +\
+        fby/(adj_Fby*(1 - fc/FcEy - (fbx/FbEx)**2))
+
+    SR2 = fc/FcEy + (fbx/FbEx)**2
+    return np.maximum(SR1, SR2)
 
 
 def nds_radial_stress(M, R, b, d, adj_Frt, shape, adj_Frc=None):
@@ -889,3 +1119,6 @@ def get_DCRS(df, units='Kip-ft'):
     df['DCR_MAX'] = df[['DCR_M3', 'DCR_M2', 'DCR_C', 'DCR_T',
                         'DCR_V', 'DCR_RM', 'DCR_TM', 'DCR_CM']].max(axis=1)
     return df
+
+
+# %%

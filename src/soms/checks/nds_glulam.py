@@ -458,6 +458,9 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 
 # %% Core Functions
 
+# TODO rename
+# TODO: make condition, temp, time, row-wise
+
 
 class NDSGluLamDesigner:
 
@@ -468,24 +471,26 @@ class NDSGluLamDesigner:
         self.method = method
         self.condition = condition
         self.temp = temp
+        self.time = time
 
         if method == 'LRFD':
             assert np.all(~np.isnan(load_combos_w_time_factors['lambda']))
-            # We want to operate on combinations of section/load combinations
-            # We take the cartesian product of section and load combos/time factors
-            self.df_props = pd.merge(section_properties,
-                                     load_combos_w_time_factors,
-                                     how='cross')
+            # Create combinations of section/load combinations
+            # Take the cartesian product of section and load combos/time factors
+            df_props = pd.merge(section_properties,
+                                load_combos_w_time_factors,
+                                how='cross')
             print(
                 f"Loaded {len(section_properties)} unique section properties"
                 f" and {len(load_combos_w_time_factors)} load combinations."
             )
         elif method == 'ASD':
-            self.df_props = section_properties
+            df_props = section_properties
             self.time = time
 
-        table = get_factors(self.df_props, self.method,
-                            self.condition, self.temp, time=self.time)
+        table = get_factors(df_props, self.method,
+                            self.condition, self.temp, time=time)
+        table = _build_section_properties(table['b'], table['d'], df=table)
         self.table = apply_factors(
             table, self.method, self.condition, self.temp)
 
@@ -496,8 +501,6 @@ class NDSGluLamDesigner:
 
     def table_from_row(self, idx):
         return table_from_df(self.table.iloc[idx], self.method, self.condition, self.temp, time=self.time)
-
-# TODO: make condition, temp, time, row-wise
 
 
 def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None) -> pd.DataFrame:
@@ -688,10 +691,27 @@ def _apply_factors_complete(row, factor_mapping):
 
     return adjusted_values
 
+
+def _build_section_properties(b, d, df=None, index=None):
+
+    if df is None:
+        df = pd.DataFrame(index=index, dtype='float64')
+
+    df['A'] = A = b*d
+    df['Ix'] = Ix = 1/12*b*d**3
+    df['Iy'] = Iy = 1/12*d*b**3
+
+    df['Sx'] = 1/6*b*d**2
+    df['Sy'] = 1/6*d*b**2
+
+    df['rx'] = np.sqrt(Ix/A)
+    df['ry'] = np.sqrt(Iy/A)
+    return df
+
+
 # @title Adjustment Factors Table from DataFrame Row
 
 # Set up Adjustment Factors Table
-
 
 def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd.DataFrame:
     r"""
@@ -795,7 +815,7 @@ def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd
 # %% Define NDS strength check functions
 
 
-def nds_flexure(M: ArrayLike, S: ArrayLike, adj_Fbx: ArrayLike) -> ArrayLike:
+def nds_flexure(M: ArrayLike, S: ArrayLike, adj_Fb: ArrayLike) -> ArrayLike:
     r"""
     Flexure Check (NDS Section 3.3)
 
@@ -805,7 +825,7 @@ def nds_flexure(M: ArrayLike, S: ArrayLike, adj_Fbx: ArrayLike) -> ArrayLike:
         Bending moment, kip-ft.
     S : ArrayLike
         Section modulus, :math:`in^3`.
-    adj_Fbx : ArrayLike
+    adj_Fb : ArrayLike
         Adjusted bending design value, psi.
 
     Returns
@@ -814,8 +834,8 @@ def nds_flexure(M: ArrayLike, S: ArrayLike, adj_Fbx: ArrayLike) -> ArrayLike:
         Flexural DCR.
 
     """
-    fbx = np.abs(M) * 1000 * 12 / S
-    return fbx/adj_Fbx
+    fb = np.abs(M) * 1000 * 12 / S
+    return fb/adj_Fb
 
 
 def nds_compression(P: ArrayLike,
@@ -1093,7 +1113,8 @@ def get_DCRS(df, units='Kip-ft'):
     df['DCR_T'] = nds_tension(P, df['A'], df['Adj_Ft'])
 
     df['DCR_V'] = nds_shear(df['V2'], df['V3'], df['A'],
-                            df['axis_orientation'], df['Adj_Fvx'], df['Adj_Fvy'])
+                            df['axis_orientation'],
+                            df['Adj_Fvx'], df['Adj_Fvy'])
 
     df['DCR_RM'] = nds_radial_stress(
         M3, df['R'], b, d, df['Adj_Frt'], df['shape'])

@@ -66,7 +66,8 @@ from .nds_glulam import (
     nds_shear,
     nds_bending_axial_tension,
     nds_bending_axial_compression,
-    NDSGluLamDesigner
+    NDSGluLamDesigner,
+    get_DCRS
 )
 
 __all__ = [
@@ -90,5 +91,6 @@ __all__ = [
     'nds_shear',
     'nds_bending_axial_tension',
     'nds_bending_axial_compression',
-    'NDSGluLamDesigner'
+    'NDSGluLamDesigner',
+    'get_DCRS'
 ]

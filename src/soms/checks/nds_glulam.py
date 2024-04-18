@@ -51,6 +51,18 @@ columns = pd.MultiIndex.from_tuples(list(C_t_data.keys()))
 C_t = pd.DataFrame(C_t_data, index=index, columns=columns)
 del index, C_t_data, columns
 
+# %% Fire Design
+
+# TODOL verify, e.g Fv vals in spreadsheet but not NDS 16.2.2?
+C_fire = pd.Series({'Fbx_posf': 2.85,
+                    'Fbyf': 2.85,
+                    'Ftf': 2.85,
+                    'Fvyf': 2.75,
+                    'Fvxf': 2.75,
+                    'Frtf': 2.85,
+                    'Fcf': 2.58,
+                    'Fc_perpf': 2.58},
+                   name='Design Stress to Member Strength Factor')
 # %% NDS 2.3.5: Format Conversion Factor, $K_F$, (LRFD ONLY)
 
 KF = pd.Series({'Fbx_pos': 2.54,
@@ -235,7 +247,50 @@ def get_CL(d: ArrayLike, b: ArrayLike, Le: ArrayLike,
     return CL
 
 
-def get_E_minp(method: str,  # TODO raise error if method not recognized, typ.
+def get_CL_fire(d: ArrayLike, b: ArrayLike, Le: ArrayLike,
+                axis: ArrayLike,
+                axis_orientation: ArrayLike,
+                Fb: ArrayLike,
+                E_minp: ArrayLike) -> ArrayLike:
+    r"""
+    NDS 3.3.3: Beam Stability Factor for fire design, :math:`C_L`.
+
+    Parameters
+    ----------
+    d : ArrayLike
+        Depth (width) of bending member, inches.
+    b : ArrayLike
+        Breadth (thickness) of rectangular bending member, inches.
+    Le : ArrayLike
+        Effectuve span length of bending member, feet.
+    axis : ArrayLike
+        Specifed axis to calculate slenderness (x-x or y-y).
+    axis_orientation : ArrayLike
+        Axis orientation of member per Fig 5A (x-x or y-y).
+    Fb : ArrayLike
+        Reference bending design value with respect to "axis", psi.
+    E_minp : ArrayLike
+        Adjusted modulus of elasticity for stability calculations, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Beam stability factor for fire design, :math:`C_L`.
+
+    """
+    RB = R_B(d, b, Le, axis, axis_orientation)
+    FbE = 1.2 * E_minp / RB**2
+
+    F_bstar = 2.85 * Fb
+
+    temp = FbE / F_bstar
+    CL = (1 + temp)/1.9 - np.sqrt(((1 + temp)/1.9)**2 - (temp/0.95))
+    return CL
+
+# TODO: rename
+
+
+def get_E_minp(method: str,
                E_min: ArrayLike,
                condition: str,
                temperature: str) -> ArrayLike:
@@ -269,6 +324,8 @@ def get_E_minp(method: str,  # TODO raise error if method not recognized, typ.
         KF = 1.76
         phi = 0.85
         return E_min * factor * KF * phi
+    else:
+        raise ValueError(f"Invalid method '{method}' - must be ASD or LRFD.")
 
 
 def get_CV(species: str,
@@ -338,12 +395,13 @@ def get_Cfu(axis_orientation: ArrayLike,
 
 
 # NDS 3.7.1: Column Stability Factor, $C_p$
-
+# TODO: add docs for cxn_fire flag, is fire ok?
 def _col_slenderness(d: ArrayLike,
                      b: ArrayLike,
                      le: ArrayLike,
                      axis: ArrayLike,
-                     axis_orientation: ArrayLike) -> ArrayLike:
+                     axis_orientation: ArrayLike,
+                     cxn_fire=False) -> ArrayLike:
     r"""
     Calculate the column slenderness ratio :math:`l_e / d` with respect to the
      indicated axis.
@@ -367,11 +425,13 @@ def _col_slenderness(d: ArrayLike,
         Slenderness ratio of compression member, :math:`l_e / d`.
 
     """
+    limit = 50 if not cxn_fire else 75
     le_div_d = np.where(axis_orientation == axis, le*12/d, le*12/b)
-    assert np.all(le_div_d < 50), \
-        """NDS 3.7.1.4: The slenderness ratio for solid columns, le/d, shall
-         not exceed 50, except that during construction le/d shall not
-         exceed 75."""
+    if not cxn_fire:
+        assert np.all(le_div_d < limit), \
+            """NDS 3.7.1.4: The slenderness ratio for solid columns, le/d,
+             shall not exceed 50, except that during construction le/d shall
+             not exceed 75."""
     return le_div_d
 
 
@@ -439,6 +499,56 @@ def get_Cp(method: str,
         np.sqrt(((1 + FcE/Fc_star)/(2*c))**2 - (FcE/Fc_star/c))
 
 
+def get_Cp_fire(d: ArrayLike,
+                b: ArrayLike,
+                axis_orientation: ArrayLike,
+                lex: ArrayLike,
+                ley: ArrayLike,
+                Fc: ArrayLike,
+                E_minp: ArrayLike) -> ArrayLike:
+    r"""
+    NDS 3.7.1: Column stability factor, :math:`C_p`.
+
+    Parameters
+    ----------
+    d : ArrayLike
+        Depth (width) of bending member, inches.
+    b : ArrayLike
+        Breadth (thickness) of rectangular bending member, inches.
+    axis_orientation : ArrayLike
+        Axis orientation of member per Fig 5A (x-x or y-y).
+    lex : ArrayLike
+        Effective length of compression member with respect to x-x axis, feet.
+    ley : ArrayLike
+        Effective length of compression member with respect to y-y axis, feet.
+    Fc : ArrayLike
+        Reference compression design value parallel to grain, psi.
+    E_minp : ArrayLike
+        Adjusted modulus of elasticity for stability calculations, psi.
+
+    Returns
+    -------
+    ArrayLike
+        Column stability factor, :math:`C_p`.
+
+    """
+    # TODO: add other cases for sawn lumber and poles?
+    c = 0.9  # glulam
+
+    le_div_d = np.maximum(_col_slenderness(d, b, lex, 'x-x', axis_orientation,
+                                           cxn_fire=True),
+                          _col_slenderness(d, b, ley, 'y-y',
+                                           axis_orientation,
+                                           cxn_fire=True)
+                          )
+
+    Fc_star = 2.58 * Fc
+
+    FcE = 2.03 * 0.822 * E_minp / le_div_d**2
+    return (1 + FcE/Fc_star)/(2*c) -\
+        np.sqrt(((1 + FcE/Fc_star)/(2*c))**2 - (FcE/Fc_star/c))
+
+
 def get_Cb(lb: ArrayLike) -> ArrayLike:
     r"""
     NDS 3.10.4 & 5.3.12: Section Bearing area factor, :math:`C_b`
@@ -460,23 +570,26 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 
 # TODO rename
 # TODO: make condition, temp, time, row-wise
+# TODO: A_net # Net Section Area (NDS Section 3.1.2)
 
 
 class NDSGluLamDesigner:
 
     def __init__(self, section_properties: pd.DataFrame,
                  load_combos_w_time_factors: pd.DataFrame = None,
-                 method: str = None, condition=None, temp=None, time=None) -> object:
+                 method: str = None, condition=None, temp=None, time=None,
+                 fire_design=False) -> object:
 
         self.method = method
         self.condition = condition
         self.temp = temp
         self.time = time
+        self.fire_design = fire_design
 
         if method == 'LRFD':
             assert np.all(~np.isnan(load_combos_w_time_factors['lambda']))
             # Create combinations of section/load combinations
-            # Take the cartesian product of section and load combos/time factors
+            # Take the cartesian product of section and load combo/time factors
             df_props = pd.merge(section_properties,
                                 load_combos_w_time_factors,
                                 how='cross')
@@ -489,7 +602,8 @@ class NDSGluLamDesigner:
             self.time = time
 
         table = get_factors(df_props, self.method,
-                            self.condition, self.temp, time=time)
+                            self.condition, self.temp, time=time,
+                            fire_design=fire_design)
         table = _build_section_properties(table['b'], table['d'], df=table)
         self.table = apply_factors(
             table, self.method, self.condition, self.temp)
@@ -499,11 +613,13 @@ class NDSGluLamDesigner:
                 self.table.shape}."""
         )
 
-    def table_from_row(self, idx):
-        return table_from_df(self.table.iloc[idx], self.method, self.condition, self.temp, time=self.time)
+    def table_from_row(self, idx, fire=False):
+        return table_from_df(self.table.iloc[idx], self.method, self.condition,
+                             self.temp, time=self.time, fire=fire)
 
 
-def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None) -> pd.DataFrame:
+def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None,
+                fire_design=False) -> pd.DataFrame:
     """
     Calculate adjustment factors for a DataFrame input of section properties.
     The section properties must include:
@@ -591,10 +707,34 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None) -> pd
 
     df['CV'] = get_CV(df['Specie'], b, d, df['Lx'])
 
+    # only the min applies to Fbx
+    df['min(CL_x,CV)'] = np.minimum(df['CL_x'], df['CV'])
+
+    # Fire
+    if fire_design:
+        d_fire = df['d_fire']
+        b_fire = df['b_fire']
+
+        for key in ['Fbx_pos', 'Fby', 'Ft', 'Fc', 'Fvx', 'Fvy', 'Frt', 'Fc_perp']:
+            df[f"{key}f"] = df[key].copy()
+
+        df['CL_xf'] = get_CL_fire(d_fire, b_fire, _Lex,
+                                  'x-x', axis_orientation,
+                                  df['Fbx_pos'], E_minp)
+
+        df['CL_yf'] = get_CL_fire(d_fire, b_fire, _Ley,
+                                  'y-y', axis_orientation,
+                                  df['Fby'], E_minp)
+
+        df['Cpf'] = get_Cp_fire(d_fire, b_fire, axis_orientation,
+                                df['lex'], df['ley'],
+                                df['Fc'], E_minp)
+        df['min(CL_xf,CV)'] = np.minimum(df['CL_xf'], df['CV'])
     return df
 
 
-def apply_factors(df: pd.DataFrame, method: str, condition, temp) -> pd.DataFrame:
+def apply_factors(df: pd.DataFrame, method: str,
+                  condition, temp) -> pd.DataFrame:
     r"""
     Given a DataFrame containing section properties and adjustment factors,
      this function computes the adjusted design values :math:`F'`.
@@ -614,37 +754,51 @@ def apply_factors(df: pd.DataFrame, method: str, condition, temp) -> pd.DataFram
     """
     # For ASD, factors common to all quantities are CM and Ct.
     # Remaining factors are:
-    factor_mapping_ASD = {'Fbx_pos': ['CD', 'CL_x', 'CV', 'CC', 'CI'],
-                          'Fby': ['CD', 'CL_y', 'Cfu', 'CI'],
-                          'Ft': ['CD'],
-                          'Fvy': ['CD', 'Cvr'],
-                          'Fvx': ['CD', 'Cvr'],
-                          'Frt': ['CD'],
-                          'Fc': ['CD', 'Cp'],
-                          'Fc_perp': ['Cb'],
-                          'E': [],
-                          'E_min': []
-                          }
+    factor_mapping_ASD = {
+        'Fbx_pos':  ['CD', 'min(CL_x,CV)', 'CC', 'CI'],
+        'Fby':      ['CD', 'CL_y', 'Cfu', 'CI'],
+        'Ft':       ['CD'],
+        'Fvy':      ['CD', 'Cvr'],
+        'Fvx':      ['CD', 'Cvr'],
+        'Frt':      ['CD'],
+        'Fc':       ['CD', 'Cp'],
+        'Fc_perp':  ['Cb'],
+        'E':        [],
+        'E_min':    [],
+        # Fire:
+        'Fbx_posf': ['min(CL_xf,CV)'],
+        'Fbyf':     ['CL_yf', 'Cfu'],
+        'Ftf':      [],
+        'Fvxf':     [],
+        'Fvyf':     [],
+        'Frtf':     [],
+        'Fcf':      ['Cpf'],
+        'Fc_perpf': [],
+    }
 
     # For LRFD, factors common to all quantities are CM, Ct, KF, and phi.
     # Remaining factors are:
-    factor_mapping_LRFD = {'Fbx_pos': ['CL_x', 'CV', 'CC', 'CI', 'lambda'],
-                           'Fby': ['CL_y', 'Cfu', 'CI', 'lambda'],
-                           'Ft': ['lambda'],
-                           'Fvy': ['Cvr', 'lambda'],
-                           'Fvx': ['Cvr', 'lambda'],
-                           'Frt': ['lambda'],
-                           'Fc': ['Cp', 'lambda'],
-                           'Fc_perp': ['Cb'],
-                           'E': [],
-                           'E_min': []
-                           }
+    factor_mapping_LRFD = {
+        'Fbx_pos':  ['CL_x', 'CV', 'CC', 'CI', 'lambda'],
+        'Fby':      ['CL_y', 'Cfu', 'CI', 'lambda'],
+        'Ft':       ['lambda'],
+        'Fvy':      ['Cvr', 'lambda'],
+        'Fvx':      ['Cvr', 'lambda'],
+        'Frt':      ['lambda'],
+        'Fc':       ['Cp', 'lambda'],
+        'Fc_perp':  ['Cb'],
+        'E':        [],
+        'E_min':    []
+    }
 
     copy = df.copy()
 
-    # Multiply all quantities by CM and Ct
+    # Multiply all quantities by CM and Ct (note this excludes fire quantities)
     copy[C_M[condition].keys()] *= C_M[condition]
     copy[C_t[condition][temp].keys()] *= C_t[condition][temp]
+
+    if set(C_fire.index).issubset(copy.columns):
+        copy[C_fire.keys()] *= C_fire
 
     if method == 'LRFD':
         copy[KF.keys()] *= KF
@@ -667,24 +821,15 @@ def _apply_factors_complete(row, factor_mapping):
 
     # Iterate through each design quantity and its applicable factors
     for quantity, factors in factor_mapping.items():
+        # Check that the reference value is in the dataframe (fire in LRFD)
+        if quantity not in row.keys():
+            continue
         # Start with the reference value for the quantity
-        # All quantities are modified by CM and Ct
+        # CM and Ct modifiers already applied as necesary
         adjusted_value = row[quantity]
 
-        # Special handling for Fbx_pos and Fby: use the smaller of CL and CV
-        if quantity in ['Fbx_pos']:
-            cl_value = row['CL_x']
-            cv_value = row['CV']
-            # Use the smaller of CL and CV
-            adjusted_value *= min(cl_value, cv_value)
-            # Apply other factors excluding CL and CV
-            for factor in factors:
-                if factor not in ['CL_x', 'CV']:
-                    adjusted_value *= row[factor]
-        else:
-            # Apply each relevant factor by multiplying
-            for factor in factors:
-                adjusted_value *= row[factor]
+        for factor in factors:
+            adjusted_value *= row[factor]
 
         # Store the adjusted value in the Series
         adjusted_values[f'Adj_{quantity}'] = adjusted_value
@@ -713,7 +858,8 @@ def _build_section_properties(b, d, df=None, index=None):
 
 # Set up Adjustment Factors Table
 
-def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd.DataFrame:
+def table_from_df(row: pd.Series, method: str, condition, temp, time=None,
+                  fire=False) -> pd.DataFrame:
     r"""
     Display a row of a dataframe as NDS table 5.3.1.
 
@@ -732,6 +878,8 @@ def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd
     """
 
     if method == 'ASD':
+        if fire:
+            return _fire_table(row)
         columns = ['CD', 'CM', 'Ct', 'CL', 'CV',
                    'Cfu', 'CC', 'CI', 'Cvr', 'CP', 'Cb']
         factor_mask = np.array([[1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0],
@@ -744,6 +892,7 @@ def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd
                                 [0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1],
                                 [0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
                                 [0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]])
+
     elif method == 'LRFD':
         columns = ['CM', 'Ct', 'CL', 'CV', 'Cfu', 'CC',
                    'CI', 'Cvr', 'CP', 'Cb', 'KF', 'phi', 'lambda']
@@ -803,6 +952,67 @@ def table_from_df(row: pd.Series, method: str, condition, temp, time=None) -> pd
     NDS['factors'] = NDS.replace(0, 1).prod(axis=1)
 
     NDS.at['Fbx_pos', 'factors'] = row['Adj_Fbx_pos']/row['Fbx_pos']
+    NDS['Ref'] = row[index]
+    NDS['Adj'] = NDS['Ref']*NDS['factors']
+
+    # previously calculated:
+    adj_vals = (row[[f"Adj_{i}" for i in index]]
+                .rename(dict([(f"Adj_{i}", i) for i in index])))
+    np.testing.assert_array_almost_equal(NDS['Adj'], adj_vals)
+    return NDS.replace(0, '-')
+
+
+def _fire_table(row: pd.Series) -> pd.DataFrame:
+    r"""
+    Display a row of a dataframe as NDS table 5.3.1.
+
+    Parameters
+    ----------
+    row : pd.Series
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
+
+    columns = ['C_fire', 'CV', 'Cfu', 'CL_fire', 'CP_fire']
+    factor_mask = np.array([[0, 1, 0, 1, 0],
+                            [0, 0, 1, 1, 0],
+                            [0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 1],
+                            [0, 0, 0, 0, 0]])
+
+    index = ['Fbx_posf',
+             'Fbyf',
+             'Ftf',
+             'Fvyf',
+             'Fvxf',
+             'Frtf',
+             'Fcf',
+             'Fc_perpf']
+
+    NDS = pd.DataFrame(index=index,
+                       columns=columns,
+                       data=factor_mask.astype(float))
+
+    NDS['C_fire'] = C_fire
+    # Fill in columns
+    NDS.at['Fbx_posf', 'CL_fire'] = row['CL_xf']
+    NDS.at['Fbyf', 'CL_fire'] = row['CL_yf']
+    NDS.at['Fbx_posf', 'CV'] = row['CV']
+    NDS.at['Fbyf', 'Cfu'] = row['Cfu']
+
+    NDS.at['Fcf', 'CP_fire'] = row['Cpf']
+
+    NDS['factors'] = NDS.replace(0, 1).prod(axis=1)
+
+    NDS.at['Fbx_posf', 'factors'] = row['Adj_Fbx_posf']/row['Fbx_pos']
     NDS['Ref'] = row[index]
     NDS['Adj'] = NDS['Ref']*NDS['factors']
 
@@ -1092,6 +1302,7 @@ def nds_radial_stress(M, R, b, d, adj_Frt, shape, adj_Frc=None):
 
 
 # %% Collect Strength check functions
+# TODO: improve unit handling, pass units list ['Kip', 'ft', 'F] or force_unit, length_unit
 def get_DCRS(df, units='Kip-ft'):
     P = df['P']
     M2 = df['M2']
@@ -1140,6 +1351,3 @@ def get_DCRS(df, units='Kip-ft'):
     df['DCR_MAX'] = df[['DCR_M3', 'DCR_M2', 'DCR_C', 'DCR_T',
                         'DCR_V', 'DCR_RM', 'DCR_TM', 'DCR_CM']].max(axis=1)
     return df
-
-
-# %%

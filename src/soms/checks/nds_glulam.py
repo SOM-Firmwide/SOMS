@@ -8,6 +8,8 @@ Created on Wed Apr 10 17:35:25 2024
 import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
+import time
+import warnings
 
 
 # NDS 2.3.2: Load Duration Factor, $C_D$ (ASD ONLY)
@@ -143,7 +145,7 @@ def get_Cvr(shape: str | ArrayLike) -> ArrayLike:
 
 
 # @title NDS 3.3.3: Beam Stability Factor, $C_L$
-
+# todo: change to warning.
 # TODO: change Le units to inches.
 def R_B(d: ArrayLike, b: ArrayLike,
         Le: ArrayLike,
@@ -176,9 +178,13 @@ def R_B(d: ArrayLike, b: ArrayLike,
     R_B = np.where(axis == axis_orientation,
                    np.sqrt(Le*d*12/b**2),
                    np.sqrt(Le*b*12/d**2))
-    assert np.all(R_B <= 50), \
-        """NDS 3.3.3.7: The slenderness ratio for bending members,
-         R_B shall not exceed 50"""
+
+    if np.any(R_B > 50):
+        exceeded_indices = np.where(R_B > 50)
+        msg = (f"NDS 3.3.3.7: The slenderness ratio for bending members, "
+               "R_B, shall not exceed 50. "
+               f"Exceeded at indices: {exceeded_indices}")
+        warnings.warn(msg, UserWarning)
     return R_B
 
 
@@ -427,11 +433,14 @@ def _col_slenderness(d: ArrayLike,
     """
     limit = 50 if not cxn_fire else 75
     le_div_d = np.where(axis_orientation == axis, le*12/d, le*12/b)
-    if not cxn_fire:
-        assert np.all(le_div_d < limit), \
-            """NDS 3.7.1.4: The slenderness ratio for solid columns, le/d,
-             shall not exceed 50, except that during construction le/d shall
-             not exceed 75."""
+
+    if np.any(le_div_d > limit):
+        exceeded_indices = np.where(le_div_d > limit)
+        msg = (f"NDS 3.7.1.4: The slenderness ratio for solid columns, le/d, "
+               f"shall not exceed 50, except that during construction le/d "
+               f"shall not exceed 75. "
+               f"Exceeded {limit} at indices: {exceeded_indices}")
+        warnings.warn(msg, UserWarning)
     return le_div_d
 
 
@@ -598,7 +607,7 @@ class NDSGluLamDesigner:
                 f" and {len(load_combos_w_time_factors)} load combinations."
             )
         elif method == 'ASD':
-            df_props = section_properties
+            df_props = section_properties.copy()
             self.time = time
 
         table = get_factors(df_props, self.method,
@@ -651,7 +660,7 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None,
 
     df['CI'] = 1.0
     df['Cvr'] = get_Cvr(df['shape'])
-    df['Frt'] = df['Cvr'] * df['Fvx'] / 3
+    df['Frt'] = df['Cvr'] * df['Fvx'] / 3  # TODO: verify
     df['Cfu'] = get_Cfu(axis_orientation, b, d)
 
     df['Cb'] = get_Cb(df['lb'])
@@ -779,7 +788,7 @@ def apply_factors(df: pd.DataFrame, method: str,
     # For LRFD, factors common to all quantities are CM, Ct, KF, and phi.
     # Remaining factors are:
     factor_mapping_LRFD = {
-        'Fbx_pos':  ['CL_x', 'CV', 'CC', 'CI', 'lambda'],
+        'Fbx_pos':  ['min(CL_x,CV)', 'CC', 'CI', 'lambda'],
         'Fby':      ['CL_y', 'Cfu', 'CI', 'lambda'],
         'Ft':       ['lambda'],
         'Fvy':      ['Cvr', 'lambda'],
@@ -807,7 +816,8 @@ def apply_factors(df: pd.DataFrame, method: str,
     factor_mappings = {'ASD': factor_mapping_ASD,
                        'LRFD': factor_mapping_LRFD}
 
-    # Apply the remaining factors per the
+    # Apply the remaining factors per the chosen mapping
+    print(f"Applying {method} factors to reference design values...")
     adjusted_quanities = copy.apply(_apply_factors_complete,
                                     args=(factor_mappings[method],),
                                     axis=1)
@@ -1304,6 +1314,7 @@ def nds_radial_stress(M, R, b, d, adj_Frt, shape, adj_Frc=None):
 # %% Collect Strength check functions
 # TODO: improve unit handling, pass units list ['Kip', 'ft', 'F] or force_unit, length_unit
 def get_DCRS(df, units='Kip-ft'):
+    start_time = time.time()
     P = df['P']
     M2 = df['M2']
     M3 = df['M3']
@@ -1318,6 +1329,58 @@ def get_DCRS(df, units='Kip-ft'):
     df['DCR_M3'] = nds_flexure(M3, df['Sx'], df['Adj_Fbx_pos'])
 
     df['DCR_M2'] = nds_flexure(M2, df['Sy'], df['Adj_Fby'])
+
+    df['DCR_C'] = nds_compression(P, df['A'], df['Adj_Fc'])
+
+    df['DCR_T'] = nds_tension(P, df['A'], df['Adj_Ft'])
+
+    df['DCR_V'] = nds_shear(df['V2'], df['V3'], df['A'],
+                            df['axis_orientation'],
+                            df['Adj_Fvx'], df['Adj_Fvy'])
+
+    df['DCR_RM'] = nds_radial_stress(
+        M3, df['R'], b, d, df['Adj_Frt'], df['shape'])
+
+    df['DCR_TM'] = nds_bending_axial_tension(P, M2, M3,
+                                             b, d, df['A'],
+                                             df['Adj_Ft'], df['Adj_Fbx_pos'],
+                                             df['Adj_Fby'],
+                                             df['CL_x'],
+                                             df['CL_y'],
+                                             df['CV'])
+
+    df['DCR_CM'] = nds_bending_axial_compression(P, M2, M3,
+                                                 b, d,
+                                                 df['axis_orientation'],
+                                                 df['lex'], df['ley'],
+                                                 df['Lex'], df['Ley'],
+                                                 df['Adj_E_min'], df['A'],
+                                                 df['Adj_Fc'],
+                                                 df['Adj_Fbx_pos'],
+                                                 df['Adj_Fby'])
+
+    df['DCR_MAX'] = df[['DCR_M3', 'DCR_M2', 'DCR_C', 'DCR_T',
+                        'DCR_V', 'DCR_RM', 'DCR_TM', 'DCR_CM']].max(axis=1)
+    elapsed = time.time() - start_time
+    print(f"Calculated DCRs for {len(df)} frames in {elapsed:.2f} seconds")
+    return df
+
+
+def get_DCRS_fire(df, units='Kip-ft'):
+    P = df['P']
+    M2 = df['M2']
+    M3 = df['M3']
+
+    if units == 'Kip-in':
+        M2 = M2/12
+        M3 = M3/12
+
+    b = df['b']
+    d = df['d']
+
+    df['DCR_M3'] = nds_flexure(M3, df['Sxf'], df['Adj_Fbx_posf'])
+
+    df['DCR_M2'] = nds_flexure(M2, df['Syf'], df['Adj_Fbyf'])
 
     df['DCR_C'] = nds_compression(P, df['A'], df['Adj_Fc'])
 

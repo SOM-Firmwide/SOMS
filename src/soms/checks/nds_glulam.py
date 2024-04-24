@@ -145,7 +145,6 @@ def get_Cvr(shape: str | ArrayLike) -> ArrayLike:
 
 
 # @title NDS 3.3.3: Beam Stability Factor, $C_L$
-# todo: change to warning.
 # TODO: change Le units to inches.
 def R_B(d: ArrayLike, b: ArrayLike,
         Le: ArrayLike,
@@ -578,7 +577,7 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 # %% Core Functions
 
 # TODO rename
-# TODO: make condition, temp, time, row-wise
+# TODO: make condition, temp, row-wise
 # TODO: A_net # Net Section Area (NDS Section 3.1.2)
 
 
@@ -586,17 +585,22 @@ class NDSGluLamDesigner:
 
     def __init__(self, section_properties: pd.DataFrame,
                  load_combos_w_time_factors: pd.DataFrame = None,
-                 method: str = None, condition=None, temp=None, time=None,
-                 fire_design=False) -> object:
+                 method: str = None, condition=None, temp=None,
+                 time_factor=None, fire_design=False) -> object:
 
         self.method = method
         self.condition = condition
         self.temp = temp
-        self.time = time
         self.fire_design = fire_design
 
-        if method == 'LRFD':
-            assert np.all(~np.isnan(load_combos_w_time_factors['lambda']))
+        assert (method == 'LRFD') or (method == 'ASD'), \
+            f"Unrecognized method {method}."
+        _time_factor_name = 'lambda' if method == 'LRFD' else 'CD'
+
+        if time_factor is None:
+            # No time_factor provided, assume time factors in df
+            assert np.all(
+                ~np.isnan(load_combos_w_time_factors[_time_factor_name]))
             # Create combinations of section/load combinations
             # Take the cartesian product of section and load combo/time factors
             df_props = pd.merge(section_properties,
@@ -606,12 +610,14 @@ class NDSGluLamDesigner:
                 f"Loaded {len(section_properties)} unique section properties"
                 f" and {len(load_combos_w_time_factors)} load combinations."
             )
-        elif method == 'ASD':
+        else:
+            # one time factor provided, usually for simple checks/tests
             df_props = section_properties.copy()
-            self.time = time
+            df_props[_time_factor_name] = time_factor
+            self.time_factor = time_factor
 
         table = get_factors(df_props, self.method,
-                            self.condition, self.temp, time=time,
+                            self.condition, self.temp,
                             fire_design=fire_design)
         table = _build_section_properties(table['b'], table['d'], df=table)
         self.table = apply_factors(
@@ -624,10 +630,10 @@ class NDSGluLamDesigner:
 
     def table_from_row(self, idx, fire=False):
         return table_from_df(self.table.iloc[idx], self.method, self.condition,
-                             self.temp, time=self.time, fire=fire)
+                             self.temp, fire=fire)
 
 
-def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None,
+def get_factors(df: pd.DataFrame, method: str, condition, temp,
                 fire_design=False) -> pd.DataFrame:
     """
     Calculate adjustment factors for a DataFrame input of section properties.
@@ -650,6 +656,10 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None,
         Returns the input DataFrame with appended columns.
 
     """
+    assert (method == 'LRFD') or (method == 'ASD'), \
+        f"Unrecognized method {method}."
+    _time_factor_name = 'lambda' if method == 'LRFD' else 'CD'
+    time_factor = df[_time_factor_name]
 
     def get_Le(coeff_lu, lu, d, coeff_d):
         return coeff_lu*lu + d*coeff_d/12
@@ -678,11 +688,6 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp, time=None,
                               df['coeff_d'])
 
     df['E_minp'] = E_minp = get_E_minp(method, df['E_min'], condition, temp)
-
-    if method == 'ASD':
-        df['CD'] = time_factor = C_D[time]
-    elif method == 'LRFD':
-        time_factor = df['lambda']
 
     df['CL_x'] = get_CL(d, b, _Lex, 'x-x',
                         axis_orientation,
@@ -868,7 +873,7 @@ def _build_section_properties(b, d, df=None, index=None):
 
 # Set up Adjustment Factors Table
 
-def table_from_df(row: pd.Series, method: str, condition, temp, time=None,
+def table_from_df(row: pd.Series, method: str, condition, temp,
                   fire=False) -> pd.DataFrame:
     r"""
     Display a row of a dataframe as NDS table 5.3.1.
@@ -886,6 +891,8 @@ def table_from_df(row: pd.Series, method: str, condition, temp, time=None,
         DESCRIPTION.
 
     """
+    assert (method == 'LRFD') or (method == 'ASD'), \
+        f"Unrecognized method {method}."
 
     if method == 'ASD':
         if fire:
@@ -952,7 +959,7 @@ def table_from_df(row: pd.Series, method: str, condition, temp, time=None,
 
     # factors apply to non zero
     if method == 'ASD':
-        NDS['CD'] = NDS['CD']*C_D[time]
+        NDS['CD'] = NDS['CD']*row['CD']
     elif method == 'LRFD':
         NDS['lambda'] = NDS['lambda']*row['lambda']
 

@@ -12,20 +12,21 @@ from soms.checks import NDSGluLamDesigner
 
 
 def test_ASD_factors():
-    condition = 'Dry'
-    temp = '100F<T<125F'
-    test_file = 'v7.7-Deck-outercolumnline-ENVELOPE_test.xlsx'
 
-    test_input = pd.read_excel(os.path.join(os.getcwd(), test_file),
+    test_file = 'v7.7-Deck-outercolumnline-ENVELOPE_test.xlsx'
+    directory = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(directory, test_file)
+
+    test_input = pd.read_excel(file_path,
                                skiprows=[0, 2],
                                sheet_name='Section Properties')
 
-    actual = pd.read_excel(test_file,
+    actual = pd.read_excel(file_path,
                            skiprows=None,
                            sheet_name='Table').set_index('Index')
 
     ASD = NDSGluLamDesigner(test_input, method='ASD',
-                            condition=condition, temp=temp, time_factor=0.9)
+                            time_factor=0.9)
     table = ASD.table_from_row(0).drop(columns='factors')
 
     # Clean the dfs by removing "-" so we can compare them numerically
@@ -33,32 +34,31 @@ def test_ASD_factors():
     table_clean = clean_convert(table)
 
     find_mismatches(table_clean, actual_clean)
-    return table
+    return None
 
 
 def test_ASD_fire():
-    condition = 'Dry'
-    temp = '100F<T<125F'
 
     a_char = 1.8
     exposed_sides_b = 2
     exposed_sides_d = 2
 
     test_file = 'v7.7-Deck-outercolumnline-ENVELOPE_test.xlsx'
-    test_input = pd.read_excel(os.path.join(os.getcwd(), test_file),
+    directory = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(directory, test_file)
+    test_input = pd.read_excel(file_path,
                                skiprows=[0, 2],
                                sheet_name='Section Properties')
 
     test_input['b_fire'] = test_input['b'] - a_char*exposed_sides_b
     test_input['d_fire'] = test_input['d'] - a_char*exposed_sides_d
 
-    actual = pd.read_excel(test_file,
+    actual = pd.read_excel(file_path,
                            skiprows=None,
                            sheet_name='Fire').set_index('Index')
 
     ASD = NDSGluLamDesigner(test_input, method='ASD',
-                            condition=condition,
-                            temp=temp,
+
                             time_factor=0.9,
                             fire_design=True)
     table = ASD.table_from_row(0, fire=True).drop(columns='factors')
@@ -68,7 +68,7 @@ def test_ASD_fire():
     table_clean = clean_convert(table)
 
     find_mismatches(table_clean, actual_clean)
-    return table
+    return None
 
 
 def clean_convert(df):

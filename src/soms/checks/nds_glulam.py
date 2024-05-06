@@ -10,8 +10,12 @@ import pandas as pd
 from numpy.typing import ArrayLike
 import time
 import warnings
-
-
+# TODO: discussion with SW 4/24
+'''
+- load matrix should come with default time factors with ability to modify
+- fire rating info should be rowwise props
+- ability to quickly check sections for user loads
+'''
 # NDS 2.3.2: Load Duration Factor, $C_D$ (ASD ONLY)
 C_D = pd.Series({'Permanent': 0.9,
                  'Ten years': 1.0,
@@ -55,7 +59,7 @@ del index, C_t_data, columns
 
 # %% Fire Design
 
-# TODOL verify, e.g Fv vals in spreadsheet but not NDS 16.2.2?
+# TODO verify, e.g Fv vals in spreadsheet but not NDS 16.2.2?
 C_fire = pd.Series({'Fbx_posf': 2.85,
                     'Fbyf': 2.85,
                     'Ftf': 2.85,
@@ -297,8 +301,8 @@ def get_CL_fire(d: ArrayLike, b: ArrayLike, Le: ArrayLike,
 
 def get_E_minp(method: str,
                E_min: ArrayLike,
-               condition: str,
-               temperature: str) -> ArrayLike:
+               condition: ArrayLike,
+               temperature: ArrayLike) -> ArrayLike:
     r"""
     Calculate the adjusted modulus of elasticity for beam and column stability
      calculations, :math:`E_{min'}`.
@@ -309,9 +313,9 @@ def get_E_minp(method: str,
         ASD or LRFD.
     E_min : ArrayLike
         Reference modulus of elasticity for stability calculations, psi.
-    condition : str
+    condition : ArrayLike
         Service moisture condition, 'Wet' or 'Dry'.
-    temperature : str
+    temperature : ArrayLike
         Temperature condition, one of 'T<100F', '100F<T<125F', '125F<T<150F')
 
     Returns
@@ -321,8 +325,11 @@ def get_E_minp(method: str,
          calculations, :math:`E_{min'}`.
 
     """
-    # TODO: factor out use of tables?
-    factor = C_M[condition]['E_min'] * C_t[condition][temperature]['E_min']
+    CM = pd.Series(condition).map(C_M.T["E_min"])
+    Ct = (pd.MultiIndex.from_arrays([condition, temperature])
+          .map(C_t.T['E_min'])
+          )
+    factor = CM * Ct
     if method == 'ASD':
         return E_min * factor
     elif method == 'LRFD':
@@ -577,20 +584,18 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 # %% Core Functions
 
 # TODO rename
-# TODO: make condition, temp, row-wise
 # TODO: A_net # Net Section Area (NDS Section 3.1.2)
+# TODO: use unique time factors not combos for property table
+# then map combo in output to time factor, and join on [section, time factor]
 
 
 class NDSGluLamDesigner:
 
     def __init__(self, section_properties: pd.DataFrame,
                  load_combos_w_time_factors: pd.DataFrame = None,
-                 method: str = None, condition=None, temp=None,
-                 time_factor=None, fire_design=False) -> object:
+                 method: str = None, time_factor=None, fire_design=False) -> object:
 
         self.method = method
-        self.condition = condition
-        self.temp = temp
         self.fire_design = fire_design
 
         assert (method == 'LRFD') or (method == 'ASD'), \
@@ -617,11 +622,10 @@ class NDSGluLamDesigner:
             self.time_factor = time_factor
 
         table = get_factors(df_props, self.method,
-                            self.condition, self.temp,
                             fire_design=fire_design)
         table = _build_section_properties(table['b'], table['d'], df=table)
         self.table = apply_factors(
-            table, self.method, self.condition, self.temp)
+            table, self.method)
 
         print(
             f"""Initialized {method} property table of shape {
@@ -629,12 +633,10 @@ class NDSGluLamDesigner:
         )
 
     def table_from_row(self, idx, fire=False):
-        return table_from_df(self.table.iloc[idx], self.method, self.condition,
-                             self.temp, fire=fire)
+        return table_from_df(self.table.iloc[idx], self.method, fire=fire)
 
 
-def get_factors(df: pd.DataFrame, method: str, condition, temp,
-                fire_design=False) -> pd.DataFrame:
+def get_factors(df: pd.DataFrame, method: str, fire_design=False) -> pd.DataFrame:
     """
     Calculate adjustment factors for a DataFrame input of section properties.
     The section properties must include:
@@ -687,15 +689,29 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp,
                               d,
                               df['coeff_d'])
 
-    df['E_minp'] = E_minp = get_E_minp(method, df['E_min'], condition, temp)
+    df['E_minp'] = E_minp = get_E_minp(method,
+                                       df['E_min'],
+                                       df['condition'],
+                                       df['temperature'])
+
+    multi_index = pd.MultiIndex.from_frame(df[['condition', 'temperature']])
+
+    CM_Fbx_pos = df['condition'].map(C_M.T["Fbx_pos"])
+    Ct_Fbx_pos = multi_index.map(C_t.T['Fbx_pos'])
+
+    CM_Fby = df['condition'].map(C_M.T["Fby"])
+    Ct_Fby = multi_index.map(C_t.T['Fby'])
+
+    CM_Fc = df['condition'].map(C_M.T["Fby"])
+    Ct_Fc = multi_index.map(C_t.T['Fby'])
 
     df['CL_x'] = get_CL(d, b, _Lex, 'x-x',
                         axis_orientation,
                         method,
                         df['Fbx_pos'],
                         E_minp,
-                        C_M[condition]['Fbx_pos'],
-                        C_t[condition][temp]['Fbx_pos'],
+                        CM_Fbx_pos,
+                        Ct_Fbx_pos,
                         df['CC'],
                         C_I,
                         time_factor=time_factor)
@@ -705,8 +721,8 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp,
                         method,
                         df['Fby'],
                         E_minp,
-                        C_M[condition]['Fby'],
-                        C_t[condition][temp]['Fby'],
+                        CM_Fby,
+                        Ct_Fby,
                         df['CC'],
                         C_I,
                         time_factor=time_factor)
@@ -714,8 +730,8 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp,
     df['Cp'] = get_Cp(method, d, b, axis_orientation,
                       df['lex'], df['ley'],
                       df['Fc'], df['E_minp'],
-                      C_M[condition]['Fc'],
-                      C_t[condition][temp]['Fc'],
+                      CM_Fc,
+                      Ct_Fc,
                       time_factor=time_factor
                       )
 
@@ -747,8 +763,7 @@ def get_factors(df: pd.DataFrame, method: str, condition, temp,
     return df
 
 
-def apply_factors(df: pd.DataFrame, method: str,
-                  condition, temp) -> pd.DataFrame:
+def apply_factors(df: pd.DataFrame, method: str) -> pd.DataFrame:
     r"""
     Given a DataFrame containing section properties and adjustment factors,
      this function computes the adjusted design values :math:`F'`.
@@ -808,8 +823,9 @@ def apply_factors(df: pd.DataFrame, method: str,
     copy = df.copy()
 
     # Multiply all quantities by CM and Ct (note this excludes fire quantities)
-    copy[C_M[condition].keys()] *= C_M[condition]
-    copy[C_t[condition][temp].keys()] *= C_t[condition][temp]
+    copy[C_M.index] *= C_M[copy['condition']].T.values
+    multi_index = pd.MultiIndex.from_frame(copy[['condition', 'temperature']])
+    copy[C_t.index] *= C_t[multi_index].T.values
 
     if set(C_fire.index).issubset(copy.columns):
         copy[C_fire.keys()] *= C_fire
@@ -873,7 +889,7 @@ def _build_section_properties(b, d, df=None, index=None):
 
 # Set up Adjustment Factors Table
 
-def table_from_df(row: pd.Series, method: str, condition, temp,
+def table_from_df(row: pd.Series, method: str,
                   fire=False) -> pd.DataFrame:
     r"""
     Display a row of a dataframe as NDS table 5.3.1.
@@ -940,8 +956,8 @@ def table_from_df(row: pd.Series, method: str, condition, temp,
                        data=factor_mask.astype(float))
 
     # Applies to all rows (CM, Ct)
-    NDS['CM'] = C_M[condition]
-    NDS['Ct'] = C_t[condition][temp]
+    NDS['CM'] = C_M[row['condition']]
+    NDS['Ct'] = C_t[row['condition']][row['temperature']]
 
     if method == 'LRFD':
         NDS['KF'] = KF
@@ -1374,6 +1390,15 @@ def get_DCRS(df, units='Kip-ft'):
 
 
 def get_DCRS_fire(df, units='Kip-ft'):
+    # TODO: incomplete
+    index = ['Fbx_posf',
+             'Fbyf',
+             'Ftf',
+             'Fvyf',
+             'Fvxf',
+             'Frtf',
+             'Fcf',
+             'Fc_perpf']
     P = df['P']
     M2 = df['M2']
     M3 = df['M3']
@@ -1389,9 +1414,9 @@ def get_DCRS_fire(df, units='Kip-ft'):
 
     df['DCR_M2'] = nds_flexure(M2, df['Syf'], df['Adj_Fbyf'])
 
-    df['DCR_C'] = nds_compression(P, df['A'], df['Adj_Fc'])
+    df['DCR_C'] = nds_compression(P, df['A'], df['Adj_Fcf'])
 
-    df['DCR_T'] = nds_tension(P, df['A'], df['Adj_Ft'])
+    df['DCR_T'] = nds_tension(P, df['A'], df['Adj_Ftf'])
 
     df['DCR_V'] = nds_shear(df['V2'], df['V3'], df['A'],
                             df['axis_orientation'],

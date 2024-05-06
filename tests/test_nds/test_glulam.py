@@ -12,7 +12,6 @@ from soms.checks import NDSGluLamDesigner
 
 
 def test_ASD_factors():
-
     test_file = 'v7.7-Deck-outercolumnline-ENVELOPE_test.xlsx'
     directory = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(directory, test_file)

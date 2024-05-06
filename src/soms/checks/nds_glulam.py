@@ -24,6 +24,10 @@ C_D = pd.Series({'Permanent': 0.9,
                  'Ten minutes': 1.6,
                  'Impact': 2.0}, name='CD')
 
+# NDS N.3.3: Time Effect Factor, $\lambda$ (LRFD ONLY)
+lmbda = pd.Series([0.6, 0.7, 0.8, 1.0, 1.25], name='lambda')
+
+_time_factor_dict = {'ASD': C_D, 'LRFD': lmbda}
 # %% NDS 5.1.4: Wet Service Factor, $C_M$
 # Dry conditions defined by moisture content < 16%
 # Section 5.1.4 see also (S5.1.5. 2005)
@@ -592,7 +596,6 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 class NDSGluLamDesigner:
 
     def __init__(self, section_properties: pd.DataFrame,
-                 load_combos_w_time_factors: pd.DataFrame = None,
                  method: str = None, time_factor=None, fire_design=False) -> object:
 
         self.method = method
@@ -604,16 +607,13 @@ class NDSGluLamDesigner:
 
         if time_factor is None:
             # No time_factor provided, assume time factors in df
-            assert np.all(
-                ~np.isnan(load_combos_w_time_factors[_time_factor_name]))
             # Create combinations of section/load combinations
             # Take the cartesian product of section and load combo/time factors
             df_props = pd.merge(section_properties,
-                                load_combos_w_time_factors,
+                                _time_factor_dict[method],
                                 how='cross')
             print(
-                f"Loaded {len(section_properties)} unique section properties"
-                f" and {len(load_combos_w_time_factors)} load combinations."
+                f"Loaded {len(section_properties)} unique section properties."
             )
         else:
             # one time factor provided, usually for simple checks/tests

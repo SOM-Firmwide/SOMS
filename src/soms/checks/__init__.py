@@ -69,7 +69,8 @@ from .nds_glulam import (
     nds_bending_axial_tension,
     nds_bending_axial_compression,
     NDSGluLamDesigner,
-    get_DCRS
+    get_DCRS,
+    get_DCRS_fire
 )
 
 __all__ = [
@@ -96,5 +97,6 @@ __all__ = [
     'nds_bending_axial_tension',
     'nds_bending_axial_compression',
     'NDSGluLamDesigner',
-    'get_DCRS'
+    'get_DCRS',
+    'get_DCRS_fire'
 ]

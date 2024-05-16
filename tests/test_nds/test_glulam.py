@@ -8,7 +8,7 @@ Created on Sat Apr 13 00:36:14 2024
 import pandas as pd
 import numpy as np
 import os
-from soms.checks import NDSGluLamDesigner
+from soms.checks import NDSGluLamDesigner, get_DCRS_fire, get_DCRS
 
 
 def test_ASD_factors():
@@ -20,27 +20,37 @@ def test_ASD_factors():
                                skiprows=[0, 2],
                                sheet_name='Section Properties')
 
-    actual = pd.read_excel(file_path,
-                           skiprows=None,
-                           sheet_name='Table').set_index('Index')
+    reference = pd.read_excel(file_path,
+                              skiprows=None,
+                              sheet_name='Table').set_index('Index')
 
-    ASD = NDSGluLamDesigner(test_input, method='ASD',
-                            time_factor=0.9)
-    table = ASD.table_from_row(0).drop(columns='factors')
+    ASD = NDSGluLamDesigner(test_input, method='ASD', time_factor=0.9)
+    actual = ASD.table_from_row(0).drop(columns='factors')
 
     # Clean the dfs by removing "-" so we can compare them numerically
+    reference_clean = clean_convert(reference)
     actual_clean = clean_convert(actual)
-    table_clean = clean_convert(table)
 
-    find_mismatches(table_clean, actual_clean)
+    find_mismatches(actual_clean, reference_clean)
+
+    # Test DCRs
+    dcr_reference = pd.read_excel(file_path,
+                                  skiprows=None,
+                                  sheet_name='DCR')
+    df = ASD.table.copy()
+    df['P'] = dcr_reference['P']
+    df['M3'] = dcr_reference['M3']
+    df['M2'] = dcr_reference['M2']
+    df['V2'] = dcr_reference['V2']
+    df['V3'] = dcr_reference['V3']
+    dcr = get_DCRS(df)
+
+    dcr = dcr[dcr_reference.columns]
+    find_mismatches(dcr, dcr_reference)
     return None
 
 
 def test_ASD_fire():
-
-    a_char = 1.8
-    exposed_sides_b = 2
-    exposed_sides_d = 2
 
     test_file = 'v7.7-Deck-outercolumnline-ENVELOPE_test.xlsx'
     directory = os.path.dirname(os.path.abspath(__file__))
@@ -49,24 +59,34 @@ def test_ASD_fire():
                                skiprows=[0, 2],
                                sheet_name='Section Properties')
 
-    test_input['b_fire'] = test_input['b'] - a_char*exposed_sides_b
-    test_input['d_fire'] = test_input['d'] - a_char*exposed_sides_d
+    reference = pd.read_excel(file_path,
+                              skiprows=None,
+                              sheet_name='Fire').set_index('Index')
 
-    actual = pd.read_excel(file_path,
-                           skiprows=None,
-                           sheet_name='Fire').set_index('Index')
-
-    ASD = NDSGluLamDesigner(test_input, method='ASD',
-
-                            time_factor=0.9,
+    ASD = NDSGluLamDesigner(test_input, method='ASD', time_factor=0.9,
                             fire_design=True)
-    table = ASD.table_from_row(0, fire=True).drop(columns='factors')
+    actual = ASD.table_from_row(0, fire=True).drop(columns='factors')
 
     # Clean the dfs by removing "-" so we can compare them numerically
+    reference_clean = clean_convert(reference)
     actual_clean = clean_convert(actual)
-    table_clean = clean_convert(table)
 
-    find_mismatches(table_clean, actual_clean)
+    find_mismatches(actual_clean, reference_clean)
+
+    # Test DCRs
+    dcr_reference = pd.read_excel(file_path,
+                                  skiprows=None,
+                                  sheet_name='DCR_Fire')
+    df = ASD.table.copy()
+    df['P'] = dcr_reference['P']
+    df['M3'] = dcr_reference['M3']
+    df['M2'] = dcr_reference['M2']
+    df['V2'] = dcr_reference['V2']
+    df['V3'] = dcr_reference['V3']
+    dcr = get_DCRS_fire(df)
+
+    dcr = dcr[dcr_reference.columns]
+    find_mismatches(dcr, dcr_reference)
     return None
 
 

@@ -589,8 +589,6 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 
 # TODO rename
 # TODO: A_net # Net Section Area (NDS Section 3.1.2)
-# TODO: use unique time factors not combos for property table
-# then map combo in output to time factor, and join on [section, time factor]
 
 
 class NDSGluLamDesigner:
@@ -742,8 +740,8 @@ def get_factors(df: pd.DataFrame, method: str, fire_design=False) -> pd.DataFram
 
     # Fire
     if fire_design:
-        d_fire = df['d_fire']
-        b_fire = df['b_fire']
+        d_fire = df['d_fire'] = df['d'] - df['a_char']*df['exp_d']
+        b_fire = df['b_fire'] = df['b'] - df['a_char']*df['exp_b']
 
         for key in ['Fbx_pos', 'Fby', 'Ft', 'Fc', 'Fvx', 'Fvy', 'Frt', 'Fc_perp']:
             df[f"{key}f"] = df[key].copy()
@@ -1250,7 +1248,8 @@ def nds_bending_axial_compression(P: ArrayLike,
                                   A_net: ArrayLike,
                                   adj_Fc: ArrayLike,
                                   adj_Fbx_pos: ArrayLike,
-                                  adj_Fby: ArrayLike) -> ArrayLike:
+                                  adj_Fby: ArrayLike,
+                                  fire: bool = False) -> ArrayLike:
     r"""
     Bending + Axial Compression or Biaxial Bending (NDS Section 3.9.2)
 
@@ -1286,6 +1285,8 @@ def nds_bending_axial_compression(P: ArrayLike,
         Adjusted major bending design value, psi.
     adj_Fby : ArrayLike
         Adjusted minor bending design value, psi.
+    fire : bool, optional
+        Flag for fire design. The default is False.
 
     Returns
     -------
@@ -1307,6 +1308,10 @@ def nds_bending_axial_compression(P: ArrayLike,
     RBy = R_B(d, b, Ley, 'y-y', axis_orientation)
 
     FbEx = 1.2*E_minp / RBx**2
+    if fire:
+        FbEx *= 2.03
+        FcEx *= 2.03
+        FcEy *= 2.03
     # FbEy = 1.2*E_minp / RBy**2
 
     compression = np.where(P < 0, -P, 0)
@@ -1390,15 +1395,7 @@ def get_DCRS(df, units='Kip-ft'):
 
 
 def get_DCRS_fire(df, units='Kip-ft'):
-    # TODO: incomplete
-    index = ['Fbx_posf',
-             'Fbyf',
-             'Ftf',
-             'Fvyf',
-             'Fvxf',
-             'Frtf',
-             'Fcf',
-             'Fc_perpf']
+    start_time = time.time()
     P = df['P']
     M2 = df['M2']
     M3 = df['M3']
@@ -1407,30 +1404,33 @@ def get_DCRS_fire(df, units='Kip-ft'):
         M2 = M2/12
         M3 = M3/12
 
-    b = df['b']
-    d = df['d']
+    b = df['b_fire']
+    d = df['d_fire']
+    A = b*d
 
-    df['DCR_M3'] = nds_flexure(M3, df['Sxf'], df['Adj_Fbx_posf'])
+    Sxf = 1/6*b*d**2
+    Syf = 1/6*d*b**2
+    df['DCR_M3'] = nds_flexure(M3, Sxf, df['Adj_Fbx_posf'])
 
-    df['DCR_M2'] = nds_flexure(M2, df['Syf'], df['Adj_Fbyf'])
+    df['DCR_M2'] = nds_flexure(M2, Syf, df['Adj_Fbyf'])
 
-    df['DCR_C'] = nds_compression(P, df['A'], df['Adj_Fcf'])
+    df['DCR_C'] = nds_compression(P, A, df['Adj_Fcf'])
 
-    df['DCR_T'] = nds_tension(P, df['A'], df['Adj_Ftf'])
+    df['DCR_T'] = nds_tension(P, A, df['Adj_Ftf'])
 
-    df['DCR_V'] = nds_shear(df['V2'], df['V3'], df['A'],
+    df['DCR_V'] = nds_shear(df['V2'], df['V3'], A,
                             df['axis_orientation'],
-                            df['Adj_Fvx'], df['Adj_Fvy'])
+                            df['Adj_Fvxf'], df['Adj_Fvyf'])
 
     df['DCR_RM'] = nds_radial_stress(
-        M3, df['R'], b, d, df['Adj_Frt'], df['shape'])
+        M3, df['R'], b, d, df['Adj_Frtf'], df['shape'])
 
     df['DCR_TM'] = nds_bending_axial_tension(P, M2, M3,
-                                             b, d, df['A'],
-                                             df['Adj_Ft'], df['Adj_Fbx_pos'],
-                                             df['Adj_Fby'],
-                                             df['CL_x'],
-                                             df['CL_y'],
+                                             b, d, A,
+                                             df['Adj_Ftf'], df['Adj_Fbx_posf'],
+                                             df['Adj_Fbyf'],
+                                             df['CL_xf'],
+                                             df['CL_yf'],
                                              df['CV'])
 
     df['DCR_CM'] = nds_bending_axial_compression(P, M2, M3,
@@ -1438,11 +1438,14 @@ def get_DCRS_fire(df, units='Kip-ft'):
                                                  df['axis_orientation'],
                                                  df['lex'], df['ley'],
                                                  df['Lex'], df['Ley'],
-                                                 df['Adj_E_min'], df['A'],
-                                                 df['Adj_Fc'],
-                                                 df['Adj_Fbx_pos'],
-                                                 df['Adj_Fby'])
+                                                 df['Adj_E_min'], A,
+                                                 df['Adj_Fcf'],
+                                                 df['Adj_Fbx_posf'],
+                                                 df['Adj_Fbyf'],
+                                                 fire=True)
 
     df['DCR_MAX'] = df[['DCR_M3', 'DCR_M2', 'DCR_C', 'DCR_T',
                         'DCR_V', 'DCR_RM', 'DCR_TM', 'DCR_CM']].max(axis=1)
+    elapsed = time.time() - start_time
+    print(f"Calculated DCRs for {len(df)} frames in {elapsed:.2f} seconds")
     return df

@@ -34,7 +34,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css" />
     <link rel="stylesheet" type="text/css" href="../_static/tabs.css" />
     <link rel="stylesheet" type="text/css" href="../_static/togglebutton.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.5ea377869091fd0449014c60fc090103.min.css" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
   <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=e353d410970836974a52" />
@@ -52,7 +52,6 @@
     <script src="../_static/togglebutton.js"></script>
     <script src="../_static/design-tabs.js"></script>
     <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
-    <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script>DOCUMENTATION_OPTIONS.pagename = 'api/soms.checks';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://raw.githubusercontent.com/SOM-Firmwide/soms/gh-pages/versions.json';
@@ -60,7 +59,7 @@
         </script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="P_delta" href="generated/soms.checks.P_delta.html" />
+    <link rel="next" title="Datastructures" href="soms.datastructures.html" />
     <link rel="prev" title="soms" href="soms.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -303,10 +302,6 @@ document.write(`
   
 
   
-    <label class="sidebar-toggle secondary-toggle" for="__secondary">
-      <span class="fa-solid fa-outdent"></span>
-    </label>
-  
 </div>
 
     </nav>
@@ -547,33 +542,8 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article" role="main">
                   
-  <section id="module-soms.checks">
-<span id="code-checks"></span><h1>Code Checks</h1>
-<section id="soms-checks">
-<h2>soms.checks</h2>
-<table class="autosummary longtable table autosummary">
-<tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/soms.checks.P_delta.html" title="soms.checks.P_delta"><code class="xref py py-obj docutils literal notranslate"><span class="pre">P_delta</span></code></a></p></td>
-<td><p>Calculate the B1 multiplier for <span class="math notranslate nohighlight">\(P-\delta\)</span> effects using AISC Appendix 8 (Approximate Second-Order Analysis), with respect to the provided axis.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/soms.checks.E3_compression.html" title="soms.checks.E3_compression"><code class="xref py py-obj docutils literal notranslate"><span class="pre">E3_compression</span></code></a></p></td>
-<td><p>AISC Chapter E Design of Members for Compression (E3)</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/soms.checks.F2_flexure_major.html" title="soms.checks.F2_flexure_major"><code class="xref py py-obj docutils literal notranslate"><span class="pre">F2_flexure_major</span></code></a></p></td>
-<td><p>AISC Chapter F Design of Members for Flexure (F2)</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/soms.checks.F6_flexure_minor.html" title="soms.checks.F6_flexure_minor"><code class="xref py py-obj docutils literal notranslate"><span class="pre">F6_flexure_minor</span></code></a></p></td>
-<td><p>AISC Chapter F Design of Members for Flexure (F6)</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/soms.checks.F8_flexure_round_hss.html" title="soms.checks.F8_flexure_round_hss"><code class="xref py py-obj docutils literal notranslate"><span class="pre">F8_flexure_round_hss</span></code></a></p></td>
-<td><p>Flexural capacity of round HSS members following AISC section F8.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/soms.checks.H1_interaction.html" title="soms.checks.H1_interaction"><code class="xref py py-obj docutils literal notranslate"><span class="pre">H1_interaction</span></code></a></p></td>
-<td><p>AISC Chapter H Design of Members for Combined Forces and Torsion (H1)</p></td>
-</tr>
-</tbody>
-</table>
-</section>
+  <section id="code-checks">
+<h1>Code Checks</h1>
 <div class="toctree-wrapper compound">
 </div>
 </section>
@@ -590,20 +560,6 @@ document.write(`
             </div>
             
             
-              
-                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
-
-  <div class="sidebar-secondary-item">
-  <div class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> On this page
-  </div>
-  <nav class="bd-toc-nav page-toc">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#soms-checks">soms.checks</a></li>
-</ul>
-  </nav></div>
-
-</div></div>
               
             
           </div>

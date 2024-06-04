@@ -5,10 +5,11 @@ soms.checks
 
 .. currentmodule:: soms.checks
 
+AISC
+----
 
 .. autosummary::
     :toctree: generated/
-    :nosignatures:
 
     P_delta
     E3_compression
@@ -16,6 +17,28 @@ soms.checks
     F6_flexure_minor
     F8_flexure_round_hss
     H1_interaction
+
+NDS
+---
+
+.. autosummary::
+    :toctree: generated/
+
+    get_CC
+    get_Cvr
+    get_CL
+    get_CV
+    get_Cfu
+    get_Cp
+    get_Cb
+    R_B
+    nds_flexure
+    nds_compression
+    nds_tension
+    nds_shear
+    nds_bending_axial_tension
+    nds_bending_axial_compression
+    NDSGluLamDesigner
 
 """
 
@@ -25,7 +48,29 @@ from .AISC import (
     F2_flexure_major,
     F6_flexure_minor,
     F8_flexure_round_hss,
-    H1_interaction,
+    H1_interaction
+)
+
+from .nds_glulam import (
+    get_CC,
+    get_Cvr,
+    get_CL,
+    get_CL_fire,
+    get_CV,
+    get_Cfu,
+    get_Cp,
+    get_Cp_fire,
+    get_Cb,
+    R_B,
+    nds_flexure,
+    nds_compression,
+    nds_tension,
+    nds_shear,
+    nds_bending_axial_tension,
+    nds_bending_axial_compression,
+    NDSGluLamDesigner,
+    get_DCRS,
+    get_DCRS_fire
 )
 
 __all__ = [
@@ -35,4 +80,23 @@ __all__ = [
     'F6_flexure_minor',
     'F8_flexure_round_hss',
     'H1_interaction',
+    'get_CC',
+    'get_Cvr',
+    'get_CL',
+    'get_CL_fire',
+    'get_CV',
+    'get_Cfu',
+    'get_Cp',
+    'get_Cp_fire',
+    'get_Cb',
+    'R_B',
+    'nds_flexure',
+    'nds_compression',
+    'nds_tension',
+    'nds_shear',
+    'nds_bending_axial_tension',
+    'nds_bending_axial_compression',
+    'NDSGluLamDesigner',
+    'get_DCRS',
+    'get_DCRS_fire'
 ]

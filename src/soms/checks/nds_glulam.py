@@ -12,7 +12,6 @@ import time
 import warnings
 # TODO: discussion with SW 4/24
 '''
-- load matrix should come with default time factors with ability to modify
 - fire rating info should be rowwise props
 - ability to quickly check sections for user loads
 '''
@@ -27,7 +26,6 @@ C_D = pd.Series({'Permanent': 0.9,
 # NDS N.3.3: Time Effect Factor, $\lambda$ (LRFD ONLY)
 lmbda = pd.Series([0.6, 0.7, 0.8, 1.0, 1.25], name='lambda')
 
-_time_factor_dict = {'ASD': C_D, 'LRFD': lmbda}
 # %% NDS 5.1.4: Wet Service Factor, $C_M$
 # Dry conditions defined by moisture content < 16%
 # Section 5.1.4 see also (S5.1.5. 2005)
@@ -594,7 +592,9 @@ def get_Cb(lb: ArrayLike) -> ArrayLike:
 class NDSGluLamDesigner:
 
     def __init__(self, section_properties: pd.DataFrame,
-                 method: str = None, time_factor=None, fire_design=False) -> object:
+                 method: str = None,
+                 time_factor: float = None,
+                 fire_design: bool = False) -> object:
 
         self.method = method
         self.fire_design = fire_design
@@ -607,6 +607,7 @@ class NDSGluLamDesigner:
             # No time_factor provided, assume time factors in df
             # Create combinations of section/load combinations
             # Take the cartesian product of section and load combo/time factors
+            _time_factor_dict = {'ASD': C_D, 'LRFD': lmbda}
             df_props = pd.merge(section_properties,
                                 _time_factor_dict[method],
                                 how='cross')
@@ -634,7 +635,9 @@ class NDSGluLamDesigner:
         return table_from_df(self.table.iloc[idx], self.method, fire=fire)
 
 
-def get_factors(df: pd.DataFrame, method: str, fire_design=False) -> pd.DataFrame:
+def get_factors(df: pd.DataFrame,
+                method: str,
+                fire_design=False) -> pd.DataFrame:
     """
     Calculate adjustment factors for a DataFrame input of section properties.
     The section properties must include:
@@ -837,33 +840,22 @@ def apply_factors(df: pd.DataFrame, method: str) -> pd.DataFrame:
 
     # Apply the remaining factors per the chosen mapping
     print(f"Applying {method} factors to reference design values...")
-    adjusted_quanities = copy.apply(_apply_factors_complete,
-                                    args=(factor_mappings[method],),
-                                    axis=1)
 
-    return pd.concat([df, adjusted_quanities], axis=1)
+    # Determine which keys in factor_mappings are in the DataFrame
+    factor_mapping = factor_mappings[method]
+    existing_factors = {key: [f for f in factors if f in copy.columns]
+                        for key, factors in factor_mapping.items() if key in copy.columns}
 
+    # Create a DataFrame to hold the adjusted values
+    adj_values = pd.DataFrame(index=copy.index)
 
-def _apply_factors_complete(row, factor_mapping):
-    # Create a Series to hold the adjusted values
-    adjusted_values = pd.Series(dtype='float64')
+    # Apply the remaining factors per the chosen mapping
+    for quantity, factors in existing_factors.items():
+        combined_factors = copy[factors].product(axis=1)
+        adj_values[f'Adj_{quantity}'] = copy[quantity] * combined_factors
 
-    # Iterate through each design quantity and its applicable factors
-    for quantity, factors in factor_mapping.items():
-        # Check that the reference value is in the dataframe (fire in LRFD)
-        if quantity not in row.keys():
-            continue
-        # Start with the reference value for the quantity
-        # CM and Ct modifiers already applied as necesary
-        adjusted_value = row[quantity]
-
-        for factor in factors:
-            adjusted_value *= row[factor]
-
-        # Store the adjusted value in the Series
-        adjusted_values[f'Adj_{quantity}'] = adjusted_value
-
-    return adjusted_values
+    # Concatenate the original DataFrame with the adjusted values
+    return pd.concat([df, adj_values], axis=1)
 
 
 def _build_section_properties(b, d, df=None, index=None):
@@ -882,10 +874,6 @@ def _build_section_properties(b, d, df=None, index=None):
     df['ry'] = np.sqrt(Iy/A)
     return df
 
-
-# @title Adjustment Factors Table from DataFrame Row
-
-# Set up Adjustment Factors Table
 
 def table_from_df(row: pd.Series, method: str,
                   fire=False) -> pd.DataFrame:
